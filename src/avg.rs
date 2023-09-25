@@ -43,10 +43,7 @@ impl Display for DisplayDuration {
 
 impl SlidingAverage {
 	pub fn new(size: usize) -> Self {
-		Self {
-			items: Vec::with_capacity(size),
-			size,
-		}
+		Self { items: Vec::with_capacity(size), size }
 	}
 
 	pub fn push(&mut self, item: Duration) -> Duration {

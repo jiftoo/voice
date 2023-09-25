@@ -6,7 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anyhow = "1.0.75"
 base64 = "0.21.0"
+core_affinity = "0.8.1"
 ctrlc = "3.4.1"
 tempfile = "3.8.0"
 web-view = { version = "0.7.3", features = ["edge"] }
