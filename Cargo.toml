@@ -7,4 +7,6 @@ edition = "2021"
 
 [dependencies]
 base64 = "0.21.0"
+ctrlc = "3.4.1"
+tempfile = "3.8.0"
 web-view = { version = "0.7.3", features = ["edge"] }

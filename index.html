@@ -44,7 +44,6 @@
 			}
 
 			{blue_frames}
-
 		</style>
 	</head>
 	<body>
@@ -57,9 +56,19 @@
 	<script>
 		let video = document.getElementById("video");
 		let bar = document.getElementById("bar");
+		let inaudible = JSON.parse(`{inaudible_regions}`);
 		video.addEventListener("timeupdate", (ev) => {
 			let complete = video.currentTime / video.duration;
 			bar.style.width = `${complete * 100}%`;
+
+			const currentTime = video.currentTime;
+
+			for (const [a, b] of inaudible) {
+				if (currentTime >= a && currentTime < b) {
+					video.currentTime = b;
+					break;
+				}
+			}
 		});
 	</script>
 </html>

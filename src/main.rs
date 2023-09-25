@@ -1,225 +1,375 @@
+pub mod avg;
+pub mod ffmpeg;
+pub mod video;
+
 use base64::Engine;
 use std::{
 	ffi::OsStr,
-	fmt::Debug,
+	fmt::{Debug, Display},
 	fs,
-	io::{BufRead, BufReader, Cursor, Write},
+	io::{BufRead, BufReader, Cursor, Read, Write},
 	path::Path,
-	process::Stdio,
+	pin::Pin,
+	process::{Child, Command, Stdio},
+	sync::{
+		atomic::{AtomicU32, AtomicUsize, Ordering},
+		Arc,
+	},
+	thread,
+	time::Duration,
 };
 use web_view::*;
 
-#[derive(Clone)]
-struct AudioFrame {
-	frame: u32,
-	time: f32,
-	rms_level: f32,
-}
+use crate::{
+	avg::{DisplayDuration, SlidingAverage},
+	ffmpeg::get_frame_length,
+	video::{AnalyzedVideoFileHandle, VideoFileHandle},
+};
 
-impl Debug for AudioFrame {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.write_fmt(format_args!("<{}>", self.frame))
-	}
-}
-
-impl AudioFrame {
-	fn parse(line1: &str, line2: &str) -> Self {
-		let mut line1 = line1.split_whitespace();
-		let frame: u32 = line1
-			.next()
-			.unwrap()
-			.split(':')
-			.nth(1)
-			.unwrap()
-			.parse()
-			.unwrap();
-		let time: f32 = line1
-			.nth(1)
-			.unwrap()
-			.split(':')
-			.nth(1)
-			.unwrap()
-			.parse()
-			.unwrap();
-		let rms_level: f32 = line2.split('=').nth(1).unwrap().parse().unwrap();
-		Self {
-			frame,
-			time,
-			rms_level,
-		}
-	}
-
-	fn level(&self) -> f32 {
-		let cutoff = -40.0f32;
-		(self.rms_level - cutoff) / -cutoff
-	}
-
-	fn is_audible(&self) -> bool {
-		self.level() >= 0.0
-	}
-}
-
-fn ffmpeg_analyze(input: impl AsRef<Path>) -> Vec<AudioFrame> {
-	// ffmpeg -i input.m4a -af astats=metadata=0:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level:file=- -f null -
-	let mut proc = std::process::Command::new("ffmpeg");
-	let proc = proc
-		.args([
-			OsStr::new("-i"),
-			fs::canonicalize(input).unwrap().as_os_str(),
-		])
-		.args([
-			"-af",
-			"astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.Peak_level:file=-",
-			"-f",
-			"null",
-		])
-		.arg("nul");
-	let args = proc.output().unwrap();
-	let reader = BufReader::new(Cursor::new(args.stdout));
-	let lines = reader.lines().map(|x| x.unwrap()).collect::<Vec<_>>();
-
-	lines
-		.chunks_exact(2)
-		.map(|x| AudioFrame::parse(&x[0], &x[1]))
-		.collect()
-}
-
-fn split_streams(input: impl AsRef<Path>, frames: &[AudioFrame]) -> Vec<AudioFrame> {
-	frames
-		.windows(2)
-		.filter(|ab| {
-			// xor
-			!ab[0].is_audible() != !ab[1].is_audible()
-		})
-		.enumerate()
-		// .filter(|(i, _)| i % 2 == 0)
-		.map(|(_, ab)| &ab[0])
-		.cloned()
-		.collect::<Vec<_>>()
-}
+// fn split_streams(input: impl AsRef<Path>, frames: &[AudioFrame]) -> Vec<AudioFrame> {
+// 	frames
+// 		.windows(2)
+// 		.filter(|ab| {
+// 			// xor
+// 			!ab[0].is_audible() != !ab[1].is_audible()
+// 		})
+// 		.enumerate()
+// 		// .filter(|(i, _)| i % 2 == 0)
+// 		.map(|(_, ab)| &ab[0])
+// 		.cloned()
+// 		.collect::<Vec<_>>()
+// }
 
 fn main() {
-	//TODO: refactor
-	//TODO: account for multiple streams in a video, as opposed to a sound file
-	let filename = "dogen.mp3";
+	let filename = "prim.mp4";
 
-	let frames = ffmpeg_analyze(filename);
-	let divs = frames
-		.iter()
-		.map(|x| {
-			if !x.is_audible() {
-				(r#"<div class="frame zero"></div>"#).to_string()
-			} else {
-				format!(
-					r#"<div class="frame" style="height: {}%"></div>"#,
-					x.level() * 100.0
-				)
+	let file = VideoFileHandle::open(filename).unwrap();
+
+	let file = file.analyze();
+
+	let t1 = std::time::Instant::now();
+
+	let pad = file.silent_periods().len().checked_ilog10().unwrap() as usize + 1;
+	let mut children = Vec::new();
+	let mut filenames = Vec::new();
+	let mut active = 0;
+	let processed_n = Arc::new(AtomicUsize::new(0));
+	let total_periods = file.audible_periods().count();
+
+	ctrlc::set_handler(unsafe {
+		let file_ptr = &file as *const _ as usize;
+		let children_ptr = &mut children as *mut _ as usize;
+		move || {
+			let file_ptr = file_ptr as *mut AnalyzedVideoFileHandle;
+			let children_ptr = children_ptr as *mut Vec<Child>;
+			for c in (*children_ptr).iter_mut() {
+				c.kill().unwrap();
+				c.wait().unwrap();
 			}
-		})
-		.collect::<Vec<_>>();
-
-	let html = include_str!("../index.html");
-	let html = html.replace("{frames}", &divs.join("\n"));
-
-	let video = fs::read(filename).unwrap();
-	let video = base64::engine::general_purpose::STANDARD_NO_PAD.encode(video);
-	let html = html.replace("{video}", &video);
-
-	let bounds = split_streams(filename, frames.as_slice());
-
-	let split_chunks = {
-		let first_audible = bounds[0].is_audible();
-		let mut bounds = bounds.iter().map(|x| (x.time)).collect::<Vec<_>>();
-
-		if first_audible {
-			bounds.insert(0, 0.0);
+			println!("dropping file {:?}", (*file_ptr).temp.path());
+			std::ptr::read(file_ptr).temp.close().unwrap();
 		}
+	})
+	.unwrap();
 
-		let _ = fs::create_dir("output");
-		fs::remove_dir_all("output")
-			.and_then(|_| fs::create_dir("output"))
-			.unwrap();
+	thread::spawn({
+		const SLEEP_DURATION: Duration = Duration::from_millis(100);
 
-		let mut handle = std::fs::File::create("output/chunks.txt").unwrap();
+		let processed_n = processed_n.clone();
+		let mut average = SlidingAverage::new(200);
+		let mut counter = 0;
+		let mut counter_resets = 0;
+		let mut last_timestamp = std::time::Instant::now();
+		let mut last_processed = 0;
+		let mut current_estimate = Duration::from_secs(0);
+		move || loop {
+			thread::sleep(SLEEP_DURATION);
 
-		let mut forks = vec![];
-		for (i, section) in bounds.chunks_exact(2).enumerate() {
-			let from = section[0];
-			let to = section[1];
+			let processed = processed_n.load(Ordering::SeqCst);
+			if processed > last_processed {
+				last_timestamp = std::time::Instant::now();
+			}
+			let current_average_duration = average.push(last_timestamp.elapsed());
+			last_processed = processed;
 
-			let current_filename = format!("chunk_{i}.m4a");
-			handle
-				.write_all(format!("file {current_filename}\n").as_bytes())
-				.unwrap();
+			let sub_dur = current_estimate
+				.checked_sub(SLEEP_DURATION)
+				.unwrap_or(Duration::from_secs(1));
 
-			let output = std::process::Command::new("ffmpeg")
-				.args([
-					OsStr::new("-i"),
-					fs::canonicalize(filename).unwrap().as_os_str(),
-				])
-				// ffmpeg -i input.m4a -ss 12.31 -c copy out.m4a
-				.arg("-ss")
-				.arg(from.to_string())
-				.arg("-t")
-				.arg((to - from).to_string())
-				// .arg("-c")
-				// .arg("copy")
-				.arg(format!("output/{current_filename}"))
-				.stdout(Stdio::null())
-				.stderr(Stdio::null())
-				.spawn();
-			println!("From {} to {} for {}", from, to, to - from);
-			forks.push(output.unwrap());
+			if counter == 0 || sub_dur <= Duration::from_secs(1) {
+				current_estimate = current_average_duration * (total_periods - processed + 1) as u32;
+			} else {
+				current_estimate = sub_dur;
+			}
+
+			if counter % 5 == 0 {
+				println!("processed {}/{} est. {}", processed, total_periods, DisplayDuration(current_estimate));
+			}
+
+			if processed == total_periods - 1 {
+				break;
+			}
+
+			counter = match (counter, counter_resets) {
+				(0, x) if x < 5 => {
+					println!("reset every 3 seconds");
+					counter_resets += 1;
+					30
+				}
+				(0, _) => {
+					counter_resets += 1;
+					println!("reset every 10 seconds");
+					100
+				}
+				_ => counter - 1,
+			};
 		}
+	});
 
-		for mut fork in forks {
-			fork.wait().unwrap();
-		}
+	for (i, a) in file.audible_periods().enumerate() {
+		println!("{i}: {:?}", a);
+	}
 
-		Some(())
-	};
+	for (i, period) in file.audible_periods().enumerate() {
+		let filename = format!("part_{:0>pad$}.mp4", i, pad = pad);
+		filenames.push(filename.clone());
 
-	let concat_chunks = {
-		let output = std::process::Command::new("ffmpeg")
-			.args(["-f", "concat"])
-			.args(["-i", "output/chunks.txt"])
-			// .args(["-c", "copy"])
-			.arg("final.mp3")
-			.arg("-y")
+		let mut command = Command::new("ffmpeg");
+		let command = command
+			.args(["-ss", &period.from.to_string()])
+			.args([OsStr::new("-i"), file.path.as_os_str()])
+			.args([
+				"-fflags",
+				"+igndts",
+				"-t",
+				&period.duration().to_string(),
+				"-c:a",
+				"libopus",
+				// "-c:v",
+				// "h264_nvenc",
+				// "-preset",
+				// "p1",
+				"-vf",
+				"scale=-2:min(720\\,trunc(ih/2)*2)",
+				"-c:v",
+				"libx264",
+				"-preset",
+				"ultrafast",
+				"-crf",
+				"0",
+				"-pix_fmt",
+				"yuv420p",
+				"-r",
+				"30",
+				file.temp.path().join(filename).to_str().unwrap(),
+			])
 			.stderr(Stdio::null())
 			.stdout(Stdio::null())
-			.output();
+			.stdin(Stdio::null());
+		children.push(command.spawn().unwrap());
+		active += 1;
+		if active > 1 {
+			let mut zombies = 0;
+			children.retain_mut(|x| match x.try_wait().unwrap() {
+				Some(_) => {
+					zombies += 1;
+					processed_n.fetch_add(1, Ordering::SeqCst);
+					false
+				}
+				None => true,
+			});
+			if zombies == 0 {
+				children.remove(0).wait().unwrap();
+				processed_n.fetch_add(1, Ordering::SeqCst);
+				active -= 1;
+			} else {
+				active -= zombies;
+			}
+		}
+	}
 
-		// fs::remove_dir_all("output").unwrap();
-		Some(())
-	};
+	let path_to_filenames = file.temp.path().join("filenames.txt");
+	let path_to_filenames = path_to_filenames.to_str().unwrap();
 
-	let bounds = bounds
-		.into_iter()
-		.map(|x| {
-			format!(
-				r"
-.frame:nth-child({}) {{
-	background-color: blue !important;
-	height: 200% !important;
-}}
-",
-				x.frame + 1
-			)
-		})
-		.collect::<Vec<String>>()
-		.join("\n");
-
-	let html = html.replace("{blue_frames}", &bounds);
-
-	web_view::builder()
-		.title("My Project")
-		.content(Content::Html(html))
-		.size(600, 600)
-		.resizable(false)
-		.debug(true)
-		.user_data(())
-		.invoke_handler(|_webview, _arg| Ok(()))
-		.run()
+	std::fs::write(path_to_filenames, filenames.into_iter().map(|x| format!("file {x}\n")).collect::<String>())
 		.unwrap();
+
+	let t2 = std::time::Instant::now();
+	println!("done splitting in {}", DisplayDuration(t2 - t1));
+
+	let mut command = Command::new("ffmpeg");
+	let output_file = file
+		.temp
+		.path()
+		.join(format!("output_{}.mp4", file.path.file_stem().unwrap().to_str().unwrap()));
+	let command = command
+		.args([
+			"-fflags",
+			"+igndts",
+			"-f",
+			"concat",
+			"-safe",
+			"0",
+			"-i",
+			path_to_filenames,
+			// "-c:v",
+			// "libx264",
+			// "-preset",
+			// "fast",
+			"-c:v",
+			"copy",
+			"-r",
+			"30",
+			output_file.to_str().unwrap(),
+		])
+		.stderr(Stdio::inherit())
+		.stdout(Stdio::null())
+		.stdin(Stdio::null())
+		.output()
+		.unwrap();
+
+	println!("done concatenating in {}", DisplayDuration(t2.elapsed()));
+
+	let stem = file.path.file_name().unwrap().to_str().unwrap();
+	let mut new_path = output_file
+		.parent()
+		.unwrap()
+		.parent()
+		.unwrap()
+		.join(format!("output_{stem}"));
+	std::fs::rename(&output_file, &new_path).unwrap();
+
+	println!("done moving {:?}", new_path);
+
+	std::mem::forget(file);
+	return;
+
+	let mut command = Command::new("ffmpeg");
+	let command = command
+		.args([
+			"-i",
+			&new_path.to_str().unwrap().to_owned(),
+			"-c:v",
+			"libx264",
+			"-preset",
+			"fast",
+			"-crf",
+			"30",
+			"-r",
+			"30",
+			{
+				new_path.set_file_name(format!("{}_reenc.mp4", new_path.file_name().unwrap().to_str().unwrap()));
+				new_path.to_str().unwrap()
+			},
+		])
+		.stderr(Stdio::null())
+		.stdout(Stdio::null())
+		.stdin(Stdio::null())
+		.output()
+		.unwrap();
+
+	println!("done re-encoding {:?}", new_path);
+	println!("total: {:?}", t1.elapsed());
+
+	// println!("frames: {:?}", frames);
+
+	// let divs = frames
+	// 	.iter()
+	// 	.map(|x| {
+	// 		if !x.is_audible() {
+	// 			(r#"<div class="frame zero"></div>"#).to_string()
+	// 		} else {
+	// 			format!(r#"<div class="frame" style="height: {}%"></div>"#, x.level() * 100.0)
+	// 		}
+	// 	})
+	// 	.collect::<Vec<_>>();
+
+	// let html = include_str!("../index.html");
+	// let html = html.replace("{frames}", &divs.join("\n"));
+
+	// let video = fs::read(filename).unwrap();
+	// let video = base64::engine::general_purpose::STANDARD_NO_PAD.encode(video);
+	// let html = html.replace("{video}", &video);
+
+	// let bounds = split_streams(filename, frames.as_slice());
+
+	// let first_audible = bounds[0].is_audible();
+
+	// // let mut bounds = bounds.iter().map(|x| (x.time)).collect::<Vec<_>>();
+	// // if first_audible {
+	// // 	bounds.insert(0, 0.0);
+	// // }
+	// // let audible_regions =
+	// // bounds.chunks_exact(2).map(|x| (x[0], x[1])).collect::<Vec<_>>();
+	// // println!("{:?}", audible_regions);
+
+	// let frame_bounds = bounds
+	// 	.iter()
+	// 	.map(|x| {
+	// 		format!(
+	// 			r"
+	// .frame:nth-child({}) {{
+	// 	background-color: blue !important;
+	// 	height: 200% !important;
+	// }}
+	// ",
+	// 			x.frame + 1
+	// 		)
+	// 	})
+	// 	.collect::<Vec<String>>()
+	// 	.join("\n");
+
+	// let mut inaudible_regions = bounds.iter().map(|x| (x.time)).collect::<Vec<_>>();
+	// if !first_audible {
+	// 	inaudible_regions.insert(0, 0.0);
+	// }
+	// let mut inaudible_regions = inaudible_regions
+	// 	.chunks_exact(2)
+	// 	.map(|x| (x[0], x[1]))
+	// 	.collect::<Vec<_>>();
+
+	// loop {
+	// 	let (data, n) = coalesce(inaudible_regions);
+	// 	inaudible_regions = data;
+	// 	println!("removed {n} regions");
+	// 	if n == 0 {
+	// 		break;
+	// 	};
+	// }
+	// let inaudible_regions = format!(
+	// 	"[{}]",
+	// 	inaudible_regions
+	// 		.into_iter()
+	// 		.map(|x| format!("[{},{}]", x.0, x.1))
+	// 		.collect::<Vec<_>>()
+	// 		.join(",")
+	// );
+	// println!("{:?}", inaudible_regions);
+
+	// let html = html.replace("{blue_frames}", &frame_bounds);
+	// let html = html.replace("{inaudible_regions}", &inaudible_regions);
+
+	// // web_view::builder()
+	// // 	.title("My Project")
+	// // 	.content(Content::Html(html))
+	// // 	.size(600, 600)
+	// // 	.resizable(false)
+	// // 	.debug(true)
+	// // 	.user_data(())
+	// // 	.invoke_handler(|_webview, _arg| Ok(()))
+	// // 	.run()
+	// // 	.unwrap();
+}
+
+fn coalesce(mut input: Vec<(f32, f32)>) -> (Vec<(f32, f32)>, usize) {
+	let mut removed = 0;
+	input.retain(|x| {
+		if x.1 - x.0 > 0.16 {
+			true
+		} else {
+			removed += 1;
+			false
+		}
+	});
+	(input, removed)
 }

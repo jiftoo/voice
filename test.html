@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Document</title>
+	</head>
+	<body>
+		<video src="./prim.mp4" controls id="video"></video>
+		<input type="text" id="sections" />
+		<button id="apply" onclick="apply()">Apply</button>
+	</body>
+	<script>
+		function apply() {
+			let segments = document.getElementById("sections").value;
+			segments = segments.replaceAll("(", "[").replaceAll(")", "]");
+			segments = JSON.parse(segments);
+			console.log(segments);
+
+			document.getElementById("video").currentTime = segments[0][0];
+
+			document.getElementById("video").ontimeupdate = (ev) => {
+				const video = ev.currentTarget;
+				const currentTime = video.currentTime;
+
+				for (const [a, b] of segments) {
+					if (currentTime >= a && currentTime < b) {
+						console.log("skip to", b);
+						video.currentTime = b;
+						break;
+					}
+				}
+			};
+		}
+	</script>
+</html>
