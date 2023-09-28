@@ -1,14 +1,24 @@
 [package]
 name = "voice"
-version = "0.1.0"
+version = "0.2.0-dev"
 edition = "2021"
+authors = ["Jiftoo <contact@jiftoo.dev>"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 anyhow = "1.0.75"
+axum = "0.6.20"
 base64 = "0.21.0"
 core_affinity = "0.8.1"
 ctrlc = "3.4.1"
+serde = { version = "1.0.188", features = ["derive"] }
+serde_json = "1.0.107"
 tempfile = "3.8.0"
+tokio = "1.32.0"
+toml = "0.8.1"
+tracing = "0.1.37"
+tracing-appender = "0.2.2"
+tracing-subscriber = "0.3.17"
 web-view = { version = "0.7.3", features = ["edge"] }
+which = "4.4.2"

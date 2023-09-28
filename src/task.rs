@@ -1,6 +1,7 @@
 use std::{
 	fmt::Debug,
 	fs,
+	marker::PhantomData,
 	mem::discriminant,
 	path::PathBuf,
 	sync::{Arc, Mutex},
@@ -322,15 +323,13 @@ impl EncodingStage {
 }
 
 pub struct Stopped;
-pub struct Running {
-	thread: Option<std::thread::JoinHandle<()>>,
-}
+pub struct Running;
 
 pub struct EncodingTask<T> {
 	stage: Option<EncodingStage>,
 	completed_stages: Arc<Mutex<Vec<StageInfo>>>,
 	file_handle: VideoFileHandle,
-	extra: T,
+	_marker: PhantomData<T>,
 }
 
 impl EncodingTask<Stopped> {
@@ -342,7 +341,7 @@ impl EncodingTask<Stopped> {
 			.into(),
 			completed_stages: Arc::new(Mutex::new(Vec::new())),
 			file_handle,
-			extra: Stopped,
+			_marker: Default::default(),
 		}
 	}
 
@@ -351,7 +350,7 @@ impl EncodingTask<Stopped> {
 			stage: self.stage,
 			completed_stages: self.completed_stages.clone(),
 			file_handle: self.file_handle,
-			extra: Running { thread: None },
+			_marker: Default::default(),
 		}
 	}
 }

@@ -1,0 +1,5 @@
+log_level = "Info"
+temp_dir_root = "./temp"
+log_file_root = "./logs"
+ffmpeg_executable = "ffmpeg"
+ffprobe_executable = "ffprobe"
