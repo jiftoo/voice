@@ -1,0 +1,12 @@
+.completed {
+	max-height: 500px;
+	padding: 1em;
+}
+
+.completed > video {
+	border-radius: inherit;
+}
+
+main {
+	padding-top: unset;
+}

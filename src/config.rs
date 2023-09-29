@@ -1,8 +1,8 @@
 use std::{
-	ops::Deref,
 	path::{Path, PathBuf},
-	sync::{OnceLock, RwLock, RwLockReadGuard},
+	sync::OnceLock,
 };
+use tokio::sync::{RwLock, RwLockReadGuard};
 
 const CONFIG_PATH: &str = "config.toml";
 
@@ -10,6 +10,7 @@ const CONFIG_PATH: &str = "config.toml";
 /// [`ConfigReloadResult::Ok`] - Config has been updated or written or initialized
 ///
 /// [`ConfigReloadResult::Err`] - Some error was encountered. This
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfigReloadResult {
 	Ok,
 	Err,
@@ -39,39 +40,50 @@ impl From<LogLevel> for tracing::Level {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Config {
+	/// level to log at
 	pub log_level: LogLevel,
-	pub temp_dir_root: PathBuf,
+	/// incoming file storage
+	pub inputs_dir: PathBuf,
+	/// encoding result storage
+	pub outputs_dir: PathBuf,
+	/// log file dir
 	pub log_file_root: PathBuf,
+	/// encoder executable path
 	pub ffmpeg_executable: PathBuf,
-	pub ffprobe_executable: PathBuf,
+	/// should re-encode on concat
+	pub concat_re_encode: bool,
+	/// max input file size in bytes
+	pub max_file_size: u64,
+	/// port to bind to
+	pub port: u16,
 }
 
 impl Default for Config {
 	fn default() -> Self {
 		Self {
+			#[cfg(debug_assertions)]
+			log_level: LogLevel::Debug,
+			#[cfg(not(debug_assertions))]
 			log_level: LogLevel::Info,
-			temp_dir_root: PathBuf::from("./temp"),
+			inputs_dir: PathBuf::from("./inputs"),
+			outputs_dir: PathBuf::from("./outputs"),
 			log_file_root: PathBuf::from("./logs"),
+			concat_re_encode: false,
 			ffmpeg_executable: PathBuf::from("ffmpeg"),
-			ffprobe_executable: PathBuf::from("ffprobe"),
+			max_file_size: 1024 * 1024 * 1024, // 1 GiB
+			port: 3000,
 		}
 	}
 }
 
 impl Config {
-	pub fn ffmpeg_found(&self) -> bool {
+	pub fn encoder_found(&self) -> bool {
 		which::which(&self.ffmpeg_executable).is_ok()
 	}
 
-	pub fn ffprobe_found(&self) -> bool {
-		which::which(&self.ffprobe_executable).is_ok()
-	}
-
-	pub fn init_temp_dir(&self) -> std::io::Result<()> {
-		std::fs::create_dir_all(&self.temp_dir_root)
-	}
-
-	pub fn init_log_file_dir(&self) -> std::io::Result<()> {
+	pub fn init_directories(&self) -> std::io::Result<()> {
+		std::fs::create_dir_all(&self.inputs_dir)?;
+		std::fs::create_dir_all(&self.outputs_dir)?;
 		std::fs::create_dir_all(&self.log_file_root)
 	}
 }
@@ -79,9 +91,9 @@ impl Config {
 pub struct ConfigStatic(OnceLock<RwLock<Config>>);
 
 impl ConfigStatic {
-	pub fn read(&self) -> RwLockReadGuard<'_, Config> {
+	pub async fn read(&self) -> tokio::sync::RwLockReadGuard<'_, Config> {
 		// SAFETY: config is intialized in main
-		unsafe { self.0.get().unwrap_unchecked().read().unwrap() }
+		unsafe { self.0.get().unwrap_unchecked().read().await }
 	}
 }
 
@@ -92,14 +104,11 @@ pub static CONFIG: ConfigStatic = ConfigStatic(OnceLock::new());
 /// Loads the config form the file or writes to the file, if one was created by calling this function.
 /// Initializes the app config if it has not been initialized yet.
 /// No-op if the app config has not been initialized yet.
-pub fn reload_config() -> ConfigReloadResult {
+pub async fn reload_config() -> ConfigReloadResult {
 	let config_file_path = Path::new(CONFIG_PATH);
 
-	let mut current_config_lock = CONFIG
-		.0
-		.get_or_init(|| RwLock::new(Config::default()))
-		.write()
-		.expect("config lock is poisoned");
+	let mut current_config_lock =
+		CONFIG.0.get_or_init(|| RwLock::new(Config::default())).write().await;
 
 	// Read the config file if it exists.
 	// Returns on io or parse error, otherwise evaluates to [`Option<Config>`],
@@ -107,13 +116,11 @@ pub fn reload_config() -> ConfigReloadResult {
 	let config_read_option: Option<Config> = match config_file_path.try_exists() {
 		Ok(false) => None,
 		Ok(true) => {
-			let Ok(loaded_config) = std::fs::read_to_string(config_file_path)
-				.map_err(|_| ())
-				.and_then(|file_data| toml::from_str(&file_data).map_err(|_| ()))
+			let Ok(file_data) = std::fs::read_to_string(config_file_path).map_err(|_| ())
 			else {
 				return ConfigReloadResult::Err;
 			};
-			loaded_config
+			toml::from_str(&file_data).ok()
 		}
 		Err(_) => return ConfigReloadResult::Err,
 	};
@@ -132,5 +139,10 @@ pub fn reload_config() -> ConfigReloadResult {
 				.expect("failed to write config file");
 		}
 	}
+
+	current_config_lock
+		.init_directories()
+		.expect("failed to create necessary directories");
+
 	ConfigReloadResult::Ok
 }

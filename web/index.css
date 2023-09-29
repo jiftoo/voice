@@ -1,0 +1,58 @@
+body {
+	background-color: #111;
+	color: #eee;
+	font-family: "Gloria Hallelujah", cursive;
+}
+
+main {
+	margin: auto;
+	text-align: center;
+	width: 100%;
+	display: flex;
+	justify-content: center;
+	padding-top: 200px;
+	flex-direction: column;
+
+	max-width: 500px;
+}
+
+h1 {
+	font-size: 48px;
+}
+
+#upload-region {
+	width: 100%;
+	min-height: 200px;
+
+	display: flex;
+	justify-content: center;
+	border: 2px dashed #aaa;
+	border-radius: 16px;
+
+	position: relative;
+}
+
+#upload-region > input {
+	position: absolute;
+	width: 100%; /* firefox fix */
+	top: 0;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	opacity: 0;
+}
+
+#upload-region-message {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+
+	font-size: 24px;
+
+	pointer-events: none;
+}
+
+.file-hover {
+	background-color: #333;
+}
