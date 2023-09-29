@@ -6,3 +6,5 @@
 *.mkv
 *.m4a
 logs
+temp
+config.toml

@@ -13,7 +13,7 @@ use crate::{
 		self, FFMpegFuture, FFMpegReadyFuture, FFMpegThreadFuture, FFMpegThreadStatus,
 		VideoPeriods,
 	},
-	video::VideoFileHandle,
+	video::{Dir, VideoFileHandleType},
 };
 
 #[derive(Debug, Clone)]
@@ -68,7 +68,12 @@ pub enum EncodingStage {
 		info: StageInfo,
 		frames: usize,
 		periods: VideoPeriods,
-		ffmpeg: Box<dyn FFMpegFuture<()>>,
+		ffmpeg: Box<dyn FFMpegFuture<()> + Send + Sync>,
+	},
+	Cleanup {
+		info: StageInfo,
+		frames: usize,
+		periods: VideoPeriods,
 	},
 	Complete {
 		info: StageInfo,
@@ -100,6 +105,9 @@ impl Debug for EncodingStage {
 			}
 			EncodingStage::ReEncode { info, .. } => {
 				f.debug_struct("ReEncode").field("info", info).finish()
+			}
+			EncodingStage::Cleanup { info, .. } => {
+				f.debug_struct("Cleanup").field("info", info).finish()
 			}
 			EncodingStage::Complete { info, .. } => {
 				f.debug_struct("Complete").field("info", info).finish()
@@ -206,7 +214,7 @@ impl EncodingStage {
 				ReEncode { periods, frames, ffmpeg, .. } => match ffmpeg.poll() {
 					FFMpegThreadStatus::Aborted(_) => todo!(),
 					FFMpegThreadStatus::Running => stage,
-					FFMpegThreadStatus::Finished(_) => Complete {
+					FFMpegThreadStatus::Finished(_) => Cleanup {
 						info: StageInfo::create(
 							FFMpegReadyFuture::new(()).get_progress(),
 						),
@@ -216,6 +224,28 @@ impl EncodingStage {
 				},
 				_ => unreachable!(),
 			},
+			Cleanup { frames, periods, .. } => {
+				std::fs::read_dir(&task.file_handle.temp)
+					.unwrap()
+					.map(|entry| entry.unwrap())
+					.filter(|entry| {
+						entry
+							.path()
+							.file_name()
+							.unwrap()
+							.to_str()
+							.unwrap()
+							.starts_with("part")
+					})
+					.for_each(|entry| {
+						std::fs::remove_file(entry.path()).unwrap();
+					});
+				Complete {
+					info: StageInfo::create(FFMpegReadyFuture::new(()).get_progress()),
+					frames,
+					periods,
+				}
+			}
 			stage @ Complete { .. } => stage,
 		};
 
@@ -234,6 +264,7 @@ impl EncodingStage {
 			Self::Concat { info, .. } => info,
 			Self::Move { info, .. } => info,
 			Self::ReEncode { info, .. } => info,
+			Self::Cleanup { info, .. } => info,
 			Self::Complete { info, .. } => info,
 		}
 	}
@@ -247,6 +278,7 @@ impl EncodingStage {
 			Self::Concat { info, .. } => info,
 			Self::Move { info, .. } => info,
 			Self::ReEncode { info, .. } => info,
+			Self::Cleanup { info, .. } => info,
 			Self::Complete { info, .. } => info,
 		}
 	}
@@ -260,17 +292,20 @@ impl EncodingStage {
 			Self::Concat { .. } => "Concat",
 			Self::Move { .. } => "Move",
 			Self::ReEncode { .. } => "ReEncode",
+			Self::Cleanup { .. } => "Cleanup",
 			Self::Complete { .. } => "Complete",
 		}
 	}
 
-	fn count_frames(file_handle: &VideoFileHandle) -> ffmpeg::FFMpegThreadFuture<usize> {
+	fn count_frames(
+		file_handle: &VideoFileHandleType,
+	) -> ffmpeg::FFMpegThreadFuture<usize> {
 		// print!("counting frames");
 		ffmpeg::get_frame_length(&file_handle.path)
 	}
 
 	fn detect_silence(
-		file_handle: &VideoFileHandle,
+		file_handle: &VideoFileHandleType,
 		total_frames: usize,
 	) -> FFMpegThreadFuture<VideoPeriods> {
 		// println!("detecting silence");
@@ -282,7 +317,7 @@ impl EncodingStage {
 	}
 
 	fn split_fragments(
-		file_handle: &VideoFileHandle,
+		file_handle: &VideoFileHandleType,
 		video_periods: VideoPeriods,
 	) -> FFMpegThreadFuture<()> {
 		// println!("splitting fragments");
@@ -290,30 +325,27 @@ impl EncodingStage {
 	}
 
 	fn concat_fragments(
-		file_handle: &VideoFileHandle,
+		file_handle: &VideoFileHandleType,
 		_total_frames: usize,
 	) -> FFMpegThreadFuture<()> {
 		// println!("concatenating fragments");
-		ffmpeg::concat_fragments(
-			&file_handle.temp,
-			format!(
-				"output_{}.mp4",
-				file_handle.path.file_stem().unwrap().to_str().unwrap()
-			),
-		)
-		.unwrap()
+		ffmpeg::concat_fragments(&file_handle.temp, "output.mp4".to_owned()).unwrap()
 	}
 
-	fn move_output(file_handle: &VideoFileHandle) -> FFMpegReadyFuture<PathBuf> {
-		let output_filename = format!(
-			"output_{}.mp4",
-			file_handle.path.file_stem().unwrap().to_str().unwrap()
-		);
-		let old_path = file_handle.temp.path().join(output_filename.clone());
-		let new_path = file_handle.temp.path().parent().unwrap().join(output_filename);
-		fs::rename(old_path, &new_path).unwrap();
+	fn move_output(file_handle: &VideoFileHandleType) -> FFMpegReadyFuture<PathBuf> {
+		// moving output is disabled
+		// if enable, change 'output.mp4' to include the file name
+		FFMpegReadyFuture::new(file_handle.temp.path().join("output.mp4"))
 
-		FFMpegReadyFuture::new(new_path)
+		// let output_filename = format!(
+		// 	"output.mp4",
+		// 	file_handle.path.file_stem().unwrap().to_str().unwrap()
+		// );
+		// let old_path = file_handle.temp.path().join(output_filename.clone());
+		// let new_path = file_handle.temp.path().parent().unwrap().join(output_filename);
+		// fs::rename(old_path, &new_path).unwrap();
+
+		// FFMpegReadyFuture::new(new_path)
 	}
 
 	fn re_encode(_total_frames: usize) -> impl FFMpegFuture<()> {
@@ -322,18 +354,21 @@ impl EncodingStage {
 	}
 }
 
+#[derive(Debug)]
 pub struct Stopped;
+#[derive(Debug)]
 pub struct Running;
 
+#[derive(Debug)]
 pub struct EncodingTask<T> {
 	stage: Option<EncodingStage>,
 	completed_stages: Arc<Mutex<Vec<StageInfo>>>,
-	file_handle: VideoFileHandle,
+	file_handle: VideoFileHandleType,
 	_marker: PhantomData<T>,
 }
 
 impl EncodingTask<Stopped> {
-	pub fn new(file_handle: VideoFileHandle) -> Self {
+	pub fn new(file_handle: VideoFileHandleType) -> Self {
 		Self {
 			stage: EncodingStage::Idle {
 				info: StageInfo::create(FFMpegReadyFuture::new(()).get_progress()),

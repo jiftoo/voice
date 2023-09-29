@@ -10,6 +10,7 @@ const CONFIG_PATH: &str = "config.toml";
 /// [`ConfigReloadResult::Ok`] - Config has been updated or written or initialized
 ///
 /// [`ConfigReloadResult::Err`] - Some error was encountered. This
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfigReloadResult {
 	Ok,
 	Err,
@@ -44,16 +45,23 @@ pub struct Config {
 	pub log_file_root: PathBuf,
 	pub ffmpeg_executable: PathBuf,
 	pub ffprobe_executable: PathBuf,
+	pub max_file_size: u64,
+	pub port: u16,
 }
 
 impl Default for Config {
 	fn default() -> Self {
 		Self {
+			#[cfg(debug_assertions)]
+			log_level: LogLevel::Trace,
+			#[cfg(not(debug_assertions))]
 			log_level: LogLevel::Info,
 			temp_dir_root: PathBuf::from("./temp"),
 			log_file_root: PathBuf::from("./logs"),
 			ffmpeg_executable: PathBuf::from("ffmpeg"),
 			ffprobe_executable: PathBuf::from("ffprobe"),
+			max_file_size: 1024 * 1024 * 1024, // 1 GiB
+			port: 3000,
 		}
 	}
 }
@@ -107,13 +115,11 @@ pub fn reload_config() -> ConfigReloadResult {
 	let config_read_option: Option<Config> = match config_file_path.try_exists() {
 		Ok(false) => None,
 		Ok(true) => {
-			let Ok(loaded_config) = std::fs::read_to_string(config_file_path)
-				.map_err(|_| ())
-				.and_then(|file_data| toml::from_str(&file_data).map_err(|_| ()))
+			let Ok(file_data) = std::fs::read_to_string(config_file_path).map_err(|_| ())
 			else {
 				return ConfigReloadResult::Err;
 			};
-			loaded_config
+			toml::from_str(&file_data).ok()
 		}
 		Err(_) => return ConfigReloadResult::Err,
 	};
@@ -132,5 +138,18 @@ pub fn reload_config() -> ConfigReloadResult {
 				.expect("failed to write config file");
 		}
 	}
+
+	// disallow temp dir in current path for security
+	// since it's accessed through /download route
+	assert!(
+		current_config_lock.temp_dir_root != Path::new(".\\")
+			&& current_config_lock.temp_dir_root != Path::new("./")
+			&& current_config_lock.temp_dir_root != Path::new(".")
+			&& current_config_lock.temp_dir_root != Path::new("")
+	);
+
+	current_config_lock.init_log_file_dir().expect("failed to create log file dir");
+	current_config_lock.init_temp_dir().expect("failed to create temp dir");
+
 	ConfigReloadResult::Ok
 }
