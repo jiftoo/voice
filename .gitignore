@@ -1,5 +1,6 @@
 /target
-/output
+/outputs
+/inputs
 /prim*
 *.mp4
 *.mp3

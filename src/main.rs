@@ -6,10 +6,9 @@ use tracing_subscriber::{
 
 pub mod avg;
 pub mod config;
-pub mod ffmpeg;
-pub mod task;
-pub mod video;
+mod task;
 pub mod web;
+pub mod ffmpeg;
 
 #[tokio::main]
 async fn main() {
@@ -22,6 +21,12 @@ async fn main() {
 	6. create the stdin listener thread, do nothing if not tty
 	*/
 
+	// TODO: Better ffmpeg error reporing; maybe a separate ffmpeg log file
+	// TODO: Clean up after panicked/failed tasks
+	// TODO: Implement re-encoding, since browsers don't like concatenated mp4.
+	// TODO: The rest of the frontend and API
+	// TODO: check if the file is suitable before processing
+
 	// println until logger is set up
 	println!(
 		"{} v{} by {}",
@@ -32,52 +37,39 @@ async fn main() {
 	println!(";D");
 
 	// initialize config
-	println!("ConfigReloadResult: {:?}", config::reload_config());
+	config::reload_config().await;
 
-	// block to drop config_lock before .await
+	// block to drop config_lock
 	{
-		let config_lock = config::CONFIG.read();
+		let config_lock = config::CONFIG.read().await;
 
 		println!("config: {:#?}", config_lock);
 
-		// checks if both ffmpeg and ffprobe are present
-		// otherwise exist with an error message
-		([
-			("ffmpeg", config_lock.ffmpeg_found(), &config_lock.ffmpeg_executable),
-			("ffprobe", config_lock.ffprobe_found(), &config_lock.ffprobe_executable),
-		]
-		.into_iter()
-		.filter(|(_, found, _)| !found)
-		.map(|(name, _, path)| {
-			println!("error: {name} not found. specified path: \"{}\"", path.display());
-		})
-		.count() != 0)
-			.then(|| {
-				// It's 1:42 therefore I must write arcane one-liners instead of using a for loop
-				std::process::exit(1);
-			});
+		if !config_lock.encoder_found() {
+			println!(
+				"error: encoder not found. specified path: \"{}\"",
+				config_lock.ffmpeg_executable.display()
+			);
+			std::process::exit(1);
+		}
 
 		// initialize logging
 
-		// let log_file_name = format!(
-		// 	"{}.log",
-		// 	SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()
-		// );
 		let log_file_name = "log.txt";
 		let stdout_subscriber = tracing_subscriber::fmt::layer()
-		// .pretty()
-		.with_writer(std::io::stdout)
-		.with_filter(
-			EnvFilter::from_default_env()
-			.add_directive(
-				LevelFilter::from_level(config_lock.log_level.into()).into(),
-			)
-			.add_directive("hyper::proto::h1::io=info".parse().unwrap())
-			.add_directive("hyper::proto::h1::conn=info".parse().unwrap())
-			.add_directive("hyper::proto::h1::decode=info".parse().unwrap())
-			.add_directive("hyper::proto::h1::encode=info".parse().unwrap())
-			.add_directive("hyper::proto::h1::role=info".parse().unwrap())
-		);
+			// .pretty()
+			.with_writer(std::io::stdout)
+			.with_filter(
+				EnvFilter::from_default_env()
+					.add_directive(
+						LevelFilter::from_level(config_lock.log_level.into()).into(),
+					)
+					.add_directive("hyper::proto::h1::io=info".parse().unwrap())
+					.add_directive("hyper::proto::h1::conn=info".parse().unwrap())
+					.add_directive("hyper::proto::h1::decode=info".parse().unwrap())
+					.add_directive("hyper::proto::h1::encode=info".parse().unwrap())
+					.add_directive("hyper::proto::h1::role=info".parse().unwrap()),
+			);
 		let file_subscriber = tracing_subscriber::fmt::layer()
 			// .pretty()
 			.with_writer(tracing_appender::rolling::never(
@@ -94,14 +86,14 @@ async fn main() {
 					.add_directive("hyper::proto::h1::conn=info".parse().unwrap())
 					.add_directive("hyper::proto::h1::decode=info".parse().unwrap())
 					.add_directive("hyper::proto::h1::encode=info".parse().unwrap())
-					.add_directive("hyper::proto::h1::role=info".parse().unwrap())
-				);
+					.add_directive("hyper::proto::h1::role=info".parse().unwrap()),
+			);
 		tracing::subscriber::set_global_default(
 			tracing_subscriber::registry().with(stdout_subscriber).with(file_subscriber),
 		)
 		.expect("failed to set global default subscriber");
 
-	tracing::info!(
+		tracing::info!(
 			"========================================================================="
 		);
 		tracing::info!("Logging initialized");
