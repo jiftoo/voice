@@ -11,7 +11,7 @@ use rand::Rng;
 use tokio::{
 	io::{self, AsyncBufReadExt, AsyncReadExt, BufReader},
 	process::{Child, Command},
-	sync::{Notify, RwLock},
+	sync::{Notify, RwLock, Mutex},
 };
 
 use crate::{
@@ -26,20 +26,18 @@ use crate::{
 /// the task's files are stored.
 #[derive(Debug)]
 pub struct Task {
-	// handle: Arc<RwLock<Child>>,
 	tokio_handle: tokio::task::JoinHandle<()>,
 	id: TaskId,
-	progress: Arc<AtomicF32>,
-	// stop_tx: tokio::sync::oneshot::Sender<()>,
+	last_status: Arc<Mutex<TaskStatus>>,
 }
 
 #[derive(Clone, Debug)]
-pub enum TaskProgress {
+pub enum TaskStatus {
 	InProgress(f32),
 	Completed,
 }
 
-impl Display for TaskProgress {
+impl Display for TaskStatus {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			Self::InProgress(x) => write!(f, "InProgress({x})"),
@@ -51,7 +49,7 @@ impl Display for TaskProgress {
 /// id of task
 /// also used as name of task's input and output files
 pub type TaskId = u64;
-pub type TaskUpdateMessage = (TaskId, Result<TaskProgress, FFmpegError>);
+pub type TaskUpdateMessage = (TaskId, Result<TaskStatus, FFmpegError>);
 
 macro_rules! try_else {
 	($expr:expr, $vn:ident, $div:block) => {
@@ -75,29 +73,33 @@ impl Task {
 	) -> io::Result<Task> {
 		let output_file = outputs_dir.join(format!("{task_id}"));
 
-		let progress = Arc::new(AtomicF32::new(0.0));
+		let last_status = Arc::new(Mutex::new(TaskStatus::InProgress(0.0)));
 
 		let tokio_handle = tokio::task::spawn({
-			let progress = progress.clone();
+			let last_status = last_status.clone();
 			async move {
 				let conversion_result = Self::run_conversion(
 					input_file,
 					output_file,
 					ffmpeg_executable,
-					progress.clone(),
+					last_status,
 					progress_tx.clone(),
 					task_id,
 				)
 				.await;
 
 				match conversion_result {
-					Ok(_) => progress_tx.send((task_id, Ok(TaskProgress::Completed))),
+					Ok(_) => progress_tx.send((task_id, Ok(TaskStatus::Completed))),
 					Err(msg) => progress_tx.send((task_id, Err(msg))),
 				};
 			}
 		});
 
-		Ok(Self { tokio_handle, id: task_id, progress })
+		Ok(Self {
+			tokio_handle,
+			id: task_id,
+			progress,
+		})
 	}
 
 	pub async fn cancel(self) {
@@ -116,17 +118,13 @@ impl Task {
 		input_file: PathBuf,
 		output_file: PathBuf,
 		ffmpeg_executable: PathBuf,
-		progress: Arc<AtomicF32>,
+		status: Arc<Mutex<TaskStatus>>,
 		progress_tx: tokio::sync::broadcast::Sender<TaskUpdateMessage>,
 		task_id: TaskId,
 	) -> Result<(), FFmpegError> {
 		tracing::debug!("begin task");
 
-		let ffmpeg = FFmpeg::new(
-			input_file.to_path_buf(),
-			output_file,
-			ffmpeg_executable.to_path_buf(),
-		);
+		let ffmpeg = FFmpeg::new(input_file.to_path_buf(), output_file, ffmpeg_executable.to_path_buf());
 
 		let analysis = try_else!(ffmpeg.analyze_silence().await, err, {
 			tracing::info!("analyze silence error: {:?}", err);
@@ -172,13 +170,12 @@ impl Task {
 			// output_time_ms is the same as _us bug in ffmpeg
 			if line.starts_with("out_time_us=") {
 				let current_time_us = line.split_at(12).1.parse::<f32>().unwrap();
-				let current_progress =
-					current_time_us / analysis.duration.as_micros() as f32;
+				let current_progress = current_time_us / analysis.duration.as_micros() as f32;
 
-				progress.store(current_progress, Ordering::Relaxed);
+				*status.lock().await = TaskStatus::InProgress(current_progress);
+				
 				// fails if no websockets are listening, which is fine
-				let _ = progress_tx
-					.send((task_id, Ok(TaskProgress::InProgress(current_progress))));
+				let _ = progress_tx.send((task_id, Ok(TaskStatus::InProgress(current_progress))));
 				if current_progress >= 1.0 || matches!(child.try_wait(), Ok(Some(_))) {
 					break;
 				}

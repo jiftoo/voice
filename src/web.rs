@@ -26,7 +26,7 @@ use tokio_util::io::ReaderStream;
 use tower_http::cors::{AllowHeaders, AllowOrigin};
 
 use crate::config::CONFIG;
-use crate::task::{Task, TaskId, TaskProgress, TaskUpdateMessage};
+use crate::task::{Task, TaskId, TaskStatus, TaskUpdateMessage};
 use crate::{config, task};
 
 type TaskUpdateSender = tokio::sync::broadcast::Sender<TaskUpdateMessage>;
