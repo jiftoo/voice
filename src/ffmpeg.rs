@@ -191,6 +191,8 @@ impl FFmpeg {
 			.arg("-loglevel")
 			.arg("error")
 			.arg("-vf")
+			// TODO: use filter_complex_script="pipe:0" instead
+			// TODO: due to max argv size limit
 			.arg(vf)
 			.arg("-af")
 			.arg(af)
