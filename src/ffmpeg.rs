@@ -168,7 +168,8 @@ impl FFmpeg {
 			.map(|x| format!("between(t\\,{}\\,{})", x.start, x.end))
 			.reduce(|a, b| format!("{}+{}", a, b))
 			.unwrap();
-		let vf = format!("select='{filter}',setpts=N/FRAME_RATE/TB");
+
+		let vf = format!("select='{filter}',setpts=N/FRAME_RATE/TB,scale='trunc(oh*a/2)*2:576'");
 		let af = format!("aselect='{filter}',asetpts=N/SR/TB");
 
 		let filter_complex = format!("[0:v]{vf}[video];[0:a]{af}[audio]");
@@ -177,8 +178,9 @@ impl FFmpeg {
 		ffmpeg
 			.arg("-progress")
 			.arg("-")
-			// .arg("-loglevel")
-			// .arg("error")
+			.arg("-loglevel")
+			.arg("error")
+			.args(["-stats_period", "0.2"])
 			.arg("-filter_complex_script")
 			.arg("pipe:0")
 			.arg("-map")
@@ -186,6 +188,7 @@ impl FFmpeg {
 			.arg("-map")
 			.arg("[audio]")
 			.args(["-c:v", "libx264", "-preset", "ultrafast"])
+			.args(["-c:a", "libopus"])
 			.args(["-f", "mp4"])
 			.arg(&self.output);
 
