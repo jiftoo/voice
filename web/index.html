@@ -62,10 +62,11 @@
 						message = `Progress: ${(progressMatch[1] * 100).toFixed(0)}%`;
 					} else if (completedMatch) {
 						message = `Completed!`;
+						window.location.assign("completed.html?t=" + queryToken);
 					} else if (errorMatch) {
 						message = `Error:<br><div>${errorMatch[1]}</div>`;
 					} else {
-						message = "Unknown message";
+						message = "Unknown message: " + encodeURIComponent(ev.data);
 					}
 
 					uploadRegionMessage.innerHTML = message;
@@ -91,6 +92,7 @@
 			}
 
 			file.addEventListener("change", async (e) => {
+				console.log(e.target, e.currentTarget, e.relatedTarget);
 				uploadRegion.classList.remove("file-hover");
 
 				const file = e.target.files[0];
