@@ -1,12 +1,21 @@
-.completed {
-	max-height: 500px;
+#completed-region {
 	padding: 1em;
+	width: fit-content;
 }
 
-.completed > video {
+#completed-region > video {
 	border-radius: inherit;
+	max-height: 500px;
 }
 
 main {
 	padding-top: unset;
+	margin: unset;
+	text-align: center;
+	width: 100%;
+	max-width: unset;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	align-items: center;
 }
