@@ -10,7 +10,7 @@ use std::{
 };
 
 use tokio::{
-	io::AsyncBufReadExt,
+	io::{AsyncBufReadExt, AsyncWriteExt},
 	process::{Child, Command},
 };
 
@@ -34,22 +34,18 @@ impl OutputParser {
 		match self {
 			OutputParser::Start => Ok((
 				OutputParser::End(
-					Self::parse_line(line, "start")?
-						.ok_or(io::Error::new(io::ErrorKind::InvalidData, line))?,
+					Self::parse_line(line, "start")?.ok_or(io::Error::new(io::ErrorKind::InvalidData, line))?,
 				),
 				None,
 			)),
 			OutputParser::End(start) => Ok((
 				OutputParser::Duration(
 					start,
-					Self::parse_line(line, "end")?
-						.ok_or(io::Error::new(io::ErrorKind::InvalidData, line))?,
+					Self::parse_line(line, "end")?.ok_or(io::Error::new(io::ErrorKind::InvalidData, line))?,
 				),
 				None,
 			)),
-			OutputParser::Duration(start, end) => {
-				Ok((OutputParser::Start, Some(start..end)))
-			}
+			OutputParser::Duration(start, end) => Ok((OutputParser::Start, Some(start..end))),
 		}
 	}
 
@@ -116,7 +112,9 @@ impl FFmpeg {
 		ffmpeg
 			.arg("-vn")
 			.arg("-af")
-			.arg(format!("silencedetect=noise={SILENCEDETECT_NOISE}:d={SILENCEDETECT_DURATION},ametadata=mode=print:file=-"))
+			.arg(format!(
+				"silencedetect=noise={SILENCEDETECT_NOISE}:d={SILENCEDETECT_DURATION},ametadata=mode=print:file=-"
+			))
 			.arg("-f")
 			.arg("null")
 			.arg("-");
@@ -136,10 +134,8 @@ impl FFmpeg {
 			// coded in epic hurry
 			let str = "Duration: ";
 			let i = stderr_text.find(str).unwrap();
-			let split =
-				stderr_text.split_at(i + str.len()).1.split_once(',').unwrap().0.trim();
-			let split =
-				split.split(':').map(|x| x.parse::<f32>().unwrap()).collect::<Vec<_>>();
+			let split = stderr_text.split_at(i + str.len()).1.split_once(',').unwrap().0.trim();
+			let split = split.split(':').map(|x| x.parse::<f32>().unwrap()).collect::<Vec<_>>();
 			Duration::from_secs_f32(split[0] * 3600.0 + split[1] * 60.0 + split[2])
 		};
 
@@ -163,46 +159,45 @@ impl FFmpeg {
 		Ok(VideoAnalysis::new(ranges, video_duration))
 	}
 
-	pub fn spawn_remove_silence(
-		&self,
-		keep_fragments: &[Range<f32>],
-	) -> io::Result<Child> {
+	pub async fn spawn_remove_silence(&self, keep_fragments: &[Range<f32>]) -> io::Result<Child> {
 		if keep_fragments.is_empty() {
-			return Err(io::Error::new(
-				io::ErrorKind::InvalidInput,
-				"no fragments to keep",
-			));
+			return Err(io::Error::new(io::ErrorKind::InvalidInput, "no fragments to keep"));
 		}
 		let filter = keep_fragments
 			.iter()
-			.map(|x| format!("between(t,{},{})", x.start, x.end))
+			.map(|x| format!("between(t\\,{}\\,{})", x.start, x.end))
 			.reduce(|a, b| format!("{}+{}", a, b))
 			.unwrap();
 		let vf = format!("select='{filter}',setpts=N/FRAME_RATE/TB");
 		let af = format!("aselect='{filter}',asetpts=N/SR/TB");
 
-		tracing::debug!("{vf}");
-		tracing::debug!("{af}");
+		let filter_complex = format!("[0:v]{vf}[video];[0:a]{af}[audio]");
 
 		let mut ffmpeg = self.prepare_command();
 		ffmpeg
 			.arg("-progress")
 			.arg("-")
-			.arg("-loglevel")
-			.arg("error")
-			.arg("-vf")
-			// TODO: use filter_complex_script="pipe:0" instead
-			// TODO: due to max argv size limit
-			.arg(vf)
-			.arg("-af")
-			.arg(af)
+			// .arg("-loglevel")
+			// .arg("error")
+			.arg("-filter_complex_script")
+			.arg("pipe:0")
+			.arg("-map")
+			.arg("[video]")
+			.arg("-map")
+			.arg("[audio]")
 			.args(["-c:v", "libx264", "-preset", "ultrafast"])
 			.args(["-f", "mp4"])
 			.arg(&self.output);
 
 		tracing::debug!("ffmpeg: {:?}", ffmpeg);
 
-		ffmpeg.spawn()
+		let mut child = ffmpeg.spawn()?;
+
+		let mut stdin = child.stdin.take().unwrap();
+		stdin.write_all(filter_complex.as_bytes()).await.unwrap();
+		stdin.shutdown().await.unwrap();
+
+		Ok(child)
 	}
 
 	/// creates an ffmpeg `Command` with null pipes and input file
@@ -212,9 +207,11 @@ impl FFmpeg {
 		let mut cmd = Command::new(&self.exec);
 		cmd.stdin(Stdio::null())
 			.stdout(Stdio::piped())
+			.stdin(Stdio::piped())
 			.stderr(Stdio::piped())
 			.arg("-i")
-			.arg(&self.input);
+			.arg(&self.input)
+			.kill_on_drop(true);
 		cmd
 	}
 }

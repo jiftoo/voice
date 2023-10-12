@@ -50,8 +50,8 @@ impl TaskManager {
 
 		tokio::fs::write(&input_file_path, input_data).await?;
 
-		let task = Task::new(input_file_path, task_id, &config_lock.outputs_dir, config_lock.ffmpeg_executable.clone())
-			.await?;
+		let task =
+			Task::new(input_file_path, task_id, &config_lock.outputs_dir, config_lock.ffmpeg_executable.clone())?;
 
 		self.tasks.write().await.insert(task_id, task);
 
@@ -218,7 +218,7 @@ async fn ws_handler(mut ws: WebSocket, state: State<AppState>, target_task: Task
 		return;
 	}
 
-	let Some(mut rx) = state.task_manager.get_task(target_task).await.map(|x| x.subscribe()) else {
+	let Some(rx) = state.task_manager.get_task(target_task).await else {
 		let _ = ws
 			.send(ws::Message::Close(Some(CloseFrame {
 				code: 0,
@@ -228,27 +228,26 @@ async fn ws_handler(mut ws: WebSocket, state: State<AppState>, target_task: Task
 		tracing::info!("ws task not found {}", target_task);
 		return;
 	};
+	let mut rx = rx.subscribe().await;
 
 	tokio::spawn(async move {
 		while let Ok(msg) = rx.recv().await {
 			let mut abort = false;
 			let message = match msg.1 {
-				Ok(status @ (TaskStatus::Error(_) | TaskStatus::Completed)) => {
+				status @ (TaskStatus::Error(_) | TaskStatus::Completed) => {
 					abort = true;
 					status.to_string()
 				}
-				Err(error) => {
-					abort = true;
-					format!("Error({error})")
-				}
-				Ok(status) => status.to_string(),
+				status @ TaskStatus::InProgress(_) => status.to_string(),
 			};
-			let Ok(_) = ws.send(ws::Message::Text(message)).await else {
+
+			let Ok(a) = ws.send(ws::Message::Text(message.clone())).await else {
 				tracing::info!("failed to send ws message");
 				break;
 			};
-
 			if abort {
+				// give axum time to flush the socket
+				tokio::time::sleep(Duration::from_millis(500)).await;
 				break;
 			}
 		}

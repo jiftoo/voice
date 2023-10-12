@@ -12,7 +12,7 @@
 	<body>
 		<main>
 			<h1>Upload video!</h1>
-			<div id="upload-region">
+			<div id="upload-region" class="dashed">
 				<input type="file" id="file" accept="video/*" />
 				<div id="upload-region-message">Drop file here</div>
 			</div>
@@ -21,6 +21,9 @@
 			const uploadRegion = document.getElementById("upload-region");
 			const uploadRegionMessage = document.getElementById("upload-region-message");
 			const file = document.getElementById("file");
+
+			const urlParams = new URLSearchParams(window.location.search);
+			const queryToken = urlParams.get("t");
 
 			uploadRegion.addEventListener("dragenter", (ev) => {
 				if (ev.currentTarget.contains(ev.relatedTarget)) {
@@ -55,9 +58,9 @@
 
 					let message = null;
 
-					let progressMatch =  ev.data.match(progressRegex);
+					let progressMatch = ev.data.match(progressRegex);
 					let completedMatch = ev.data.match(completedRegex);
-					let errorMatch = 	 ev.data.match(errorRegex);
+					let errorMatch = ev.data.match(errorRegex);
 					if (progressMatch) {
 						message = `Progress: ${(progressMatch[1] * 100).toFixed(0)}%`;
 					} else if (completedMatch) {
@@ -85,11 +88,18 @@
 			}
 
 			let currentSocket = null;
-			const urlParams = new URLSearchParams(window.location.search);
-			const queryToken = urlParams.get("t");
-			if (queryToken && !Number.isNaN(queryToken)) {
-				currentSocket = watchProgress(queryToken);
-			}
+
+			window.addEventListener("beforeunload", () => {
+				if (currentSocket) {
+					currentSocket.close();
+				}
+			});
+
+			window.addEventListener("load", () => {
+				if (queryToken && !Number.isNaN(queryToken)) {
+					currentSocket = watchProgress(queryToken);
+				}
+			});
 
 			file.addEventListener("change", async (e) => {
 				console.log(e.target, e.currentTarget, e.relatedTarget);

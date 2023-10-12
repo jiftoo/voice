@@ -13,10 +13,10 @@
 	<body>
 		<main>
 			<h1>Processed video:</h1>
-			<div id="upload-region" class="completed"></div>
+			<div id="completed-region" class="dashed"></div>
 		</main>
 		<script>
-			const uploadRegion = document.getElementById("upload-region");
+			const uploadRegion = document.getElementById("completed-region");
 
 			let currentSocket = null;
 			const urlParams = new URLSearchParams(window.location.search);
