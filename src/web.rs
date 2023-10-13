@@ -10,7 +10,7 @@ use axum::body::{Bytes, StreamBody};
 use axum::debug_handler;
 use axum::extract::multipart::MultipartRejection;
 use axum::extract::ws::rejection::WebSocketUpgradeRejection;
-use axum::extract::ws::{self, CloseFrame, WebSocket};
+use axum::extract::ws::{self, WebSocket};
 use axum::extract::{DefaultBodyLimit, Multipart, Path, Query, State, WebSocketUpgrade};
 use axum::http::header::{CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_TYPE};
 use axum::http::{HeaderMap, StatusCode};
@@ -20,7 +20,7 @@ use axum::{
 	Router,
 };
 
-use tokio::io::AsyncRead;
+
 use tokio::sync::{RwLock, RwLockReadGuard};
 use tokio_util::io::ReaderStream;
 use tower_http::cors::{AllowHeaders, AllowOrigin};
@@ -226,7 +226,7 @@ async fn status_ws(
 
 	EndpointResult::Ok(
 		ws.on_failed_upgrade(|_| tracing::info!("ws upgrade failed"))
-			.on_upgrade(move |ws| ws_handler(ws, state, t, rx)),
+			.on_upgrade(move |ws| ws_handler(ws, t, rx)),
 	)
 }
 
