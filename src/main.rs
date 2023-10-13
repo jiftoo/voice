@@ -80,16 +80,16 @@ async fn main() {
 			);
 		let file_subscriber = tracing_subscriber::fmt::layer()
 			// .pretty()
-			.with_writer(tracing_appender::rolling::never(
+			.with_writer(tracing_appender::rolling::hourly(
 				&config_lock.log_file_root,
 				log_file_name,
 			))
 			.with_ansi(false)
-			.with_filter(tracing_subscriber::filter::LevelFilter::from_level(
-				config_lock.log_level.into(),
-			))
 			.with_filter(
 				EnvFilter::from_default_env()
+					.add_directive(
+						LevelFilter::from_level(config_lock.log_level.into()).into(),
+					)
 					.add_directive("hyper::proto::h1::io=info".parse().unwrap())
 					.add_directive("hyper::proto::h1::conn=info".parse().unwrap())
 					.add_directive("hyper::proto::h1::decode=info".parse().unwrap())
