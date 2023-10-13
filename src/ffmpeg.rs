@@ -1,13 +1,4 @@
-use std::{
-	fmt::Display,
-	io,
-	num::ParseFloatError,
-	ops::Range,
-	path::PathBuf,
-	process::{ExitStatus, Stdio},
-	sync::Arc,
-	time::Duration,
-};
+use std::{fmt::Display, io, ops::Range, path::PathBuf, process::Stdio, sync::Arc, time::Duration};
 
 use tokio::{
 	io::{AsyncBufReadExt, AsyncWriteExt},
@@ -180,7 +171,7 @@ impl FFmpeg {
 			.arg("-")
 			.arg("-loglevel")
 			.arg("error")
-			.args(["-stats_period", "0.2"])
+			.args(["-stats_period", "0.3"])
 			.arg("-filter_complex_script")
 			.arg("pipe:0")
 			.arg("-map")

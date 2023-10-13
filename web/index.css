@@ -54,6 +54,8 @@ h1 {
 	font-size: 24px;
 
 	pointer-events: none;
+
+	white-space: pre-line;
 }
 
 .file-hover {

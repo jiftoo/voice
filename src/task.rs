@@ -1,26 +1,17 @@
 use std::{
-	cell::Cell,
-	ffi::OsStr,
 	fmt::Display,
-	mem::MaybeUninit,
 	path::{Path, PathBuf},
-	process::{ExitStatus, Stdio},
-	sync::{atomic::Ordering, Arc},
+	sync::Arc,
+	time::Duration,
 };
 
-use atomic_float::AtomicF32;
 use rand::Rng;
 use tokio::{
 	io::{self, AsyncBufReadExt, AsyncReadExt, BufReader},
-	process::{Child, Command},
-	sync::{Mutex, Notify, RwLock},
-	task::block_in_place,
+	sync::RwLock,
 };
 
-use crate::{
-	config::CONFIG,
-	ffmpeg::{FFmpeg, FFmpegError},
-};
+use crate::ffmpeg::{FFmpeg, FFmpegError};
 
 pub type TaskUpdateSender = tokio::sync::broadcast::Sender<TaskUpdateMessage>;
 
@@ -42,21 +33,21 @@ pub struct Task {
 	inner: Arc<RwLock<InnerTask>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(tag = "type", content = "data")]
 pub enum TaskStatus {
-	InProgress(f32),
+	InProgress {
+		progress: f32,
+		speed: f32,
+	},
+	#[serde(serialize_with = "display_serialize")]
 	Error(FFmpegError),
 	Completed,
 }
 
-impl Display for TaskStatus {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			Self::InProgress(x) => write!(f, "InProgress({x})"),
-			Self::Error(x) => write!(f, "Error({x})"),
-			Self::Completed => write!(f, "Completed"),
-		}
-	}
+fn display_serialize<S: serde::Serializer, T: Display>(x: &T, s: S) -> Result<S::Ok, S::Error> {
+	s.collect_str(x)
 }
 
 /// id of task
@@ -73,6 +64,44 @@ macro_rules! try_else {
 	};
 }
 
+enum StatsParse {
+	Time(Duration),
+	Speed(f32),
+	/// error or not any other stat
+	Other,
+}
+
+impl StatsParse {
+	fn parse_line(line: &str) -> Self {
+		let mut line = line.split('=');
+
+		let Some(lhs) = line.next() else {
+			return Self::Other;
+		};
+		let Some(rhs) = line.next() else {
+			return Self::Other;
+		};
+
+		match lhs {
+			"out_time_ms" => rhs
+				.parse::<i64>()
+				.map(|mut x| {
+					if x == -9223372036854775807 {
+						x = 0;
+					}
+					Self::Time(Duration::from_micros(x as u64))
+				})
+				.unwrap_or(Self::Other),
+			"speed" => rhs
+				.trim_end_matches('x')
+				.parse::<f32>()
+				.map(Self::Speed)
+				.unwrap_or(Self::Other),
+			_ => Self::Other,
+		}
+	}
+}
+
 impl Task {
 	/// initialize and start a new task
 	/// also start a tokio task
@@ -85,7 +114,10 @@ impl Task {
 	) -> io::Result<Task> {
 		let output_file = outputs_dir.join(format!("{task_id}"));
 
-		let last_status = TaskStatus::InProgress(0.0);
+		let last_status = TaskStatus::InProgress {
+			progress: 0.0,
+			speed: 0.0,
+		};
 		let task_update_tx = tokio::sync::broadcast::Sender::new(8);
 
 		let inner_task = Arc::new(RwLock::new(InnerTask {
@@ -105,6 +137,7 @@ impl Task {
 					Err(msg) => TaskStatus::Error(msg),
 				};
 
+				tracing::debug!("sent last update: {final_status:?}");
 				Self::update_status(&mut *inner_task.write().await, task_id, final_status).await;
 			}
 		});
@@ -136,7 +169,7 @@ impl Task {
 
 	async fn update_status(inner: &mut InnerTask, id: TaskId, new_status: TaskStatus) {
 		inner.last_status = new_status.clone();
-		let _ = inner.task_update_tx.send((id, new_status.clone()));
+		let _res = inner.task_update_tx.send((id, new_status.clone()));
 	}
 
 	async fn run_conversion(
@@ -171,6 +204,10 @@ impl Task {
 			// race reading an error and reading a line
 			// break if EOF
 			let line = tokio::select! {
+				_ = tokio::time::sleep(Duration::from_secs(1)) => {
+					tracing::warn!("ffmpeg lagging");
+					None
+				}
 				x = err_lines.next_line() => {
 					match x.unwrap() {
 						Some(x) => {
@@ -187,12 +224,8 @@ impl Task {
 			// abort if the process is done
 			match child.try_wait() {
 				Ok(None) => {}
-				Ok(Some(status)) => {
-					if status.success() {
-						break;
-					} else {
-						return Err(FFmpegError::FFmpeg(error_log.join("\n")));
-					}
+				Ok(Some(_)) => {
+					break;
 				}
 				err @ Err(_) => {
 					tracing::warn!("error while calling try_wait()");
@@ -205,35 +238,44 @@ impl Task {
 				continue;
 			};
 
+			let mut inner_lock = inner.write().await;
+
 			// output_time_ms is the same as _us bug in ffmpeg
-			if line.starts_with("out_time_us=") {
-				let mut current_time_us = line.split_at(12).1.parse::<i64>().unwrap();
-				if current_time_us == -9223372036854775807 {
-					current_time_us = 0;
+			if let TaskStatus::InProgress {
+				ref mut progress,
+				ref mut speed,
+			} = inner_lock.last_status
+			{
+				match StatsParse::parse_line(&line) {
+					StatsParse::Speed(new_speed) => {
+						*speed = new_speed;
+					}
+					StatsParse::Time(new_time) => {
+						let new_progress = new_time.as_secs_f32() / analysis.duration.as_secs_f32();
+						*progress = new_progress;
+					}
+					_ => {
+						// nothing was updated
+						continue;
+					}
 				}
-				let current_progress = current_time_us as f32 / analysis.duration.as_micros() as f32;
-
-				tracing::debug!(
-					"progress: {} | {} {} {:?}",
-					current_progress,
-					current_time_us,
-					analysis.duration.as_micros(),
-					line
-				);
-
-				Self::update_status(&mut *inner.write().await, task_id, TaskStatus::InProgress(current_progress)).await;
 			}
+			let last_status = inner_lock.last_status.clone();
+			Self::update_status(&mut inner_lock, task_id, last_status).await;
+			tracing::debug!("status: {:?}", inner_lock.last_status);
 		}
 
 		let status = child.wait().await.unwrap();
 		tracing::debug!("status: {:?} success: {}", status, status.success());
 
-		if !error_log.is_empty() {
-			tracing::info!("errors during task: {}", error_log.join("\n"));
+		if status.success() {
+			Ok(())
+		} else {
+			Err(FFmpegError::FFmpeg(error_log.join("\n")))
 		}
 
-		tracing::debug!("end task");
-
-		Ok(())
+		// if !error_log.is_empty() {
+		// 	tracing::info!("errors during task: {}", error_log.join("\n"));
+		// }
 	}
 }
