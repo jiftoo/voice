@@ -11,7 +11,7 @@ logs
 temp
 config.toml
 test_complex_a.txt
-key
+keys
 ./a.py
 ./measure.txt
 ./in.webm

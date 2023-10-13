@@ -29,17 +29,21 @@ impl Display for DisplayDuration {
 		} else if secs < 60 * 60 * 24 {
 			write!(f, "{}h {}m {}s", secs / (60 * 60), (secs / 60) % 60, secs % 60)
 		} else {
-			write!(f, "{}d {}h {}m {}s", secs / (60 * 60 * 24), (secs / (60 * 60)) % 24, (secs / 60) % 60, secs % 60)
+			write!(
+				f,
+				"{}d {}h {}m {}s",
+				secs / (60 * 60 * 24),
+				(secs / (60 * 60)) % 24,
+				(secs / 60) % 60,
+				secs % 60
+			)
 		}
 	}
 }
 
 impl SlidingAverage {
 	pub fn new(size: usize) -> Self {
-		Self {
-			items: Vec::with_capacity(size),
-			size,
-		}
+		Self { items: Vec::with_capacity(size), size }
 	}
 
 	pub fn push(&mut self, item: Duration) -> Duration {
