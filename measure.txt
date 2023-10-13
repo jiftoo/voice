@@ -1,4 +1,0 @@
-ffmpeg command: 58.19s
-ffmpeg command nvenc: 99.30s
-my program: 84.34s
-:(
