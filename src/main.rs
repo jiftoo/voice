@@ -76,7 +76,8 @@ async fn main() {
 					.add_directive("hyper::proto::h1::conn=info".parse().unwrap())
 					.add_directive("hyper::proto::h1::decode=info".parse().unwrap())
 					.add_directive("hyper::proto::h1::encode=info".parse().unwrap())
-					.add_directive("hyper::proto::h1::role=info".parse().unwrap()),
+					.add_directive("hyper::proto::h1::role=info".parse().unwrap())
+					.add_directive("h2::codec::framed_read=info".parse().unwrap()),
 			);
 		let file_subscriber = tracing_subscriber::fmt::layer()
 			// .pretty()
@@ -94,7 +95,8 @@ async fn main() {
 					.add_directive("hyper::proto::h1::conn=info".parse().unwrap())
 					.add_directive("hyper::proto::h1::decode=info".parse().unwrap())
 					.add_directive("hyper::proto::h1::encode=info".parse().unwrap())
-					.add_directive("hyper::proto::h1::role=info".parse().unwrap()),
+					.add_directive("hyper::proto::h1::role=info".parse().unwrap())
+					.add_directive("h2::codec::framed_read=info".parse().unwrap()),
 			);
 		tracing::subscriber::set_global_default(
 			tracing_subscriber::registry().with(stdout_subscriber).with(file_subscriber),

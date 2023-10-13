@@ -2,7 +2,6 @@ FROM rust:1.73
 WORKDIR /dist
 
 COPY ./src src
-COPY ./web web
 COPY ./Cargo* ./
 
 # ENV RUSTFLAGS="-C target-feature=+crt-static"
@@ -12,7 +11,8 @@ RUN cargo build --release --target x86_64-unknown-linux-gnu
 
 FROM alpine
 RUN apk add --no-cache gcompat libstdc++ ffmpeg
-COPY --from=0 /dist/web /web
+COPY ./certificates /certificates
+COPY ./web /web
 COPY --from=0 /dist/target/x86_64-unknown-linux-gnu/release/voice /voice
 ENTRYPOINT ["/voice"]
-EXPOSE 80
+EXPOSE 443

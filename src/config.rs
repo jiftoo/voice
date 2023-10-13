@@ -77,7 +77,7 @@ impl Default for Config {
 			web_root: PathBuf::from("./web"),
 			ffmpeg_executable: PathBuf::from("ffmpeg"),
 			max_file_size: 1024 * 1024 * 1024, // 1 GiB
-			port: 80,
+			port: 443,
 			delete_files_after_minutes: 60,
 			cert_pem_path: PathBuf::from("./certificates/cert.pem"),
 			key_pem_path: PathBuf::from("./certificates/key.pem"),
