@@ -58,6 +58,10 @@ pub struct Config {
 	pub port: u16,
 	/// delete input/output files after this many minutes
 	pub delete_files_after_minutes: u64,
+	/// certificate path
+	pub cert_pem_path: PathBuf,
+	/// key path
+	pub key_pem_path: PathBuf,
 }
 
 impl Default for Config {
@@ -75,6 +79,8 @@ impl Default for Config {
 			max_file_size: 1024 * 1024 * 1024, // 1 GiB
 			port: 80,
 			delete_files_after_minutes: 60,
+			cert_pem_path: PathBuf::from("./certificates/cert.pem"),
+			key_pem_path: PathBuf::from("./certificates/key.pem"),
 		}
 	}
 }

@@ -21,6 +21,7 @@ use axum::{
 	Router,
 };
 
+use axum_server::tls_rustls::RustlsConfig;
 use tokio::sync::{RwLock, RwLockReadGuard};
 use tokio_util::io::ReaderStream;
 use tower_http::cors::{AllowHeaders, AllowOrigin};
@@ -149,9 +150,22 @@ pub async fn initialize_server() {
 				.expose_headers([CONTENT_TYPE, CONTENT_LENGTH]),
 		);
 
-	let addr = SocketAddr::from(([0, 0, 0, 0], config::CONFIG.read().await.port));
+	let config_lock = config::CONFIG.read().await;
+
+	let tls_config = RustlsConfig::from_pem_file(
+		&config_lock.cert_pem_path,
+		&config_lock.key_pem_path,
+	)
+	.await
+	.unwrap();
+
+	let addr = SocketAddr::from(([0, 0, 0, 0], config_lock.port));
+	tracing::info!("Using tls");
 	tracing::debug!("Started server on {}", addr);
-	axum::Server::bind(&addr).serve(router.into_make_service()).await.unwrap();
+	axum_server::bind_rustls(addr, tls_config)
+		.serve(router.into_make_service())
+		.await
+		.unwrap();
 }
 
 async fn meta_header_middleware<B>(request: Request<B>, next: Next<B>) -> Response {
