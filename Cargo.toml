@@ -1,6 +1,6 @@
 [package]
 name = "voice"
-version = "0.2.0-dev"
+version = "0.2.0"
 edition = "2021"
 authors = ["Jiftoo <contact@jiftoo.dev>"]
 
