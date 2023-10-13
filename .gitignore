@@ -11,6 +11,6 @@ temp
 config.toml
 test_complex_a.txt
 key
-a.py
-measure.txt
-in.webm
+./a.py
+./measure.txt
+./in.webm
