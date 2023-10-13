@@ -105,7 +105,11 @@
 					uploadRegionMessage.innerText = "Preparing...";
 					const status = await fetch("/status?t=" + queryToken, {
 						method: "HEAD",
-					}).then((v) => v.status);
+					})
+						.then((v) => v.status)
+						.catch(() => {
+							uploadRegionMessage.innerText = "Error!";
+						});
 					if (status == 404) {
 						uploadRegionMessage.innerText = "Video not found";
 					} else {
