@@ -1,27 +1,17 @@
 use std::{
-	cell::Cell,
-	ffi::OsStr,
 	fmt::Display,
-	mem::MaybeUninit,
 	path::{Path, PathBuf},
-	process::{ExitStatus, Stdio},
-	sync::{atomic::Ordering, Arc},
+	sync::Arc,
 	time::Duration,
 };
 
-use atomic_float::AtomicF32;
 use rand::Rng;
 use tokio::{
 	io::{self, AsyncBufReadExt, AsyncReadExt, BufReader},
-	process::{Child, Command},
-	sync::{Mutex, Notify, RwLock},
-	task::block_in_place,
+	sync::RwLock,
 };
 
-use crate::{
-	config::CONFIG,
-	ffmpeg::{FFmpeg, FFmpegError},
-};
+use crate::ffmpeg::{FFmpeg, FFmpegError};
 
 pub type TaskUpdateSender = tokio::sync::broadcast::Sender<TaskUpdateMessage>;
 
@@ -179,7 +169,7 @@ impl Task {
 
 	async fn update_status(inner: &mut InnerTask, id: TaskId, new_status: TaskStatus) {
 		inner.last_status = new_status.clone();
-		let res = inner.task_update_tx.send((id, new_status.clone()));
+		let _res = inner.task_update_tx.send((id, new_status.clone()));
 	}
 
 	async fn run_conversion(
