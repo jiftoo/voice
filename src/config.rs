@@ -50,8 +50,8 @@ pub struct Config {
 	pub log_file_root: PathBuf,
 	/// encoder executable path
 	pub ffmpeg_executable: PathBuf,
-	/// should re-encode on concat
-	pub concat_re_encode: bool,
+	/// web file root
+	pub web_root: PathBuf,
 	/// max input file size in bytes
 	pub max_file_size: u64,
 	/// port to bind to
@@ -68,7 +68,7 @@ impl Default for Config {
 			inputs_dir: PathBuf::from("./inputs"),
 			outputs_dir: PathBuf::from("./outputs"),
 			log_file_root: PathBuf::from("./logs"),
-			concat_re_encode: false,
+			web_root: PathBuf::from("./web"),
 			ffmpeg_executable: PathBuf::from("ffmpeg"),
 			max_file_size: 1024 * 1024 * 1024, // 1 GiB
 			port: 3000,
@@ -79,6 +79,31 @@ impl Default for Config {
 impl Config {
 	pub fn encoder_found(&self) -> bool {
 		which::which(&self.ffmpeg_executable).is_ok()
+	}
+
+	pub fn web_dir_found(&self) -> bool {
+		if !self.web_root.exists() {
+			return false;
+		}
+
+		let mut index = false;
+		let mut completed = false;
+		for file in self
+			.web_root
+			.read_dir()
+			.unwrap()
+			.flatten()
+			.map(|x| x.file_name().to_string_lossy().to_string())
+		{
+			if file == "index.html" {
+				index = true;
+			}
+			if file == "completed.html" {
+				completed = true;
+			}
+		}
+
+		index && completed
 	}
 
 	pub fn init_directories(&self) -> std::io::Result<()> {
@@ -107,7 +132,8 @@ pub static CONFIG: ConfigStatic = ConfigStatic(OnceLock::new());
 pub async fn reload_config() -> ConfigReloadResult {
 	let config_file_path = Path::new(CONFIG_PATH);
 
-	let mut current_config_lock = CONFIG.0.get_or_init(|| RwLock::new(Config::default())).write().await;
+	let mut current_config_lock =
+		CONFIG.0.get_or_init(|| RwLock::new(Config::default())).write().await;
 
 	// Read the config file if it exists.
 	// Returns on io or parse error, otherwise evaluates to [`Option<Config>`],
@@ -115,7 +141,8 @@ pub async fn reload_config() -> ConfigReloadResult {
 	let config_read_option: Option<Config> = match config_file_path.try_exists() {
 		Ok(false) => None,
 		Ok(true) => {
-			let Ok(file_data) = std::fs::read_to_string(config_file_path).map_err(|_| ()) else {
+			let Ok(file_data) = std::fs::read_to_string(config_file_path).map_err(|_| ())
+			else {
 				return ConfigReloadResult::Err;
 			};
 			toml::from_str(&file_data).ok()
@@ -130,9 +157,11 @@ pub async fn reload_config() -> ConfigReloadResult {
 		}
 		// Config file does not exist => write current config to file
 		None => {
-			let config_string = toml::to_string(&*current_config_lock).expect("failed to serialize config to toml");
+			let config_string = toml::to_string(&*current_config_lock)
+				.expect("failed to serialize config to toml");
 			// this should never fail, because we already made some syscalls to check if the file exists
-			std::fs::write(config_file_path, config_string).expect("failed to write config file");
+			std::fs::write(config_file_path, config_string)
+				.expect("failed to write config file");
 		}
 	}
 

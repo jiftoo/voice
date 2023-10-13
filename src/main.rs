@@ -1,10 +1,14 @@
-use tracing_subscriber::{filter::LevelFilter, prelude::__tracing_subscriber_SubscriberExt, EnvFilter, Layer};
+#![deny(unused_crate_dependencies)]
 
-pub mod avg;
-pub mod config;
-pub mod ffmpeg;
+use tracing_subscriber::{
+	filter::LevelFilter, prelude::__tracing_subscriber_SubscriberExt, EnvFilter, Layer,
+};
+
+mod avg;
+mod config;
+mod ffmpeg;
 mod task;
-pub mod web;
+mod web;
 
 #[tokio::main]
 async fn main() {
@@ -24,7 +28,12 @@ async fn main() {
 	// TODO: check if the file is suitable before processing
 
 	// println until logger is set up
-	println!("{} v{} by {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), env!("CARGO_PKG_AUTHORS"));
+	println!(
+		"{} v{} by {}",
+		env!("CARGO_PKG_NAME"),
+		env!("CARGO_PKG_VERSION"),
+		env!("CARGO_PKG_AUTHORS")
+	);
 	println!(";D");
 
 	// initialize config
@@ -37,7 +46,18 @@ async fn main() {
 		println!("config: {:#?}", config_lock);
 
 		if !config_lock.encoder_found() {
-			println!("error: encoder not found. specified path: \"{}\"", config_lock.ffmpeg_executable.display());
+			println!(
+				"error: encoder not found. specified path: \"{}\"",
+				config_lock.ffmpeg_executable.display()
+			);
+			std::process::exit(1);
+		}
+
+		if !config_lock.web_dir_found() {
+			println!(
+				"error: web directory not found. specified path: \"{}\"",
+				config_lock.web_root.display()
+			);
 			std::process::exit(1);
 		}
 
@@ -49,7 +69,9 @@ async fn main() {
 			.with_writer(std::io::stdout)
 			.with_filter(
 				EnvFilter::from_default_env()
-					.add_directive(LevelFilter::from_level(config_lock.log_level.into()).into())
+					.add_directive(
+						LevelFilter::from_level(config_lock.log_level.into()).into(),
+					)
 					.add_directive("hyper::proto::h1::io=info".parse().unwrap())
 					.add_directive("hyper::proto::h1::conn=info".parse().unwrap())
 					.add_directive("hyper::proto::h1::decode=info".parse().unwrap())
@@ -58,9 +80,14 @@ async fn main() {
 			);
 		let file_subscriber = tracing_subscriber::fmt::layer()
 			// .pretty()
-			.with_writer(tracing_appender::rolling::never(&config_lock.log_file_root, log_file_name))
+			.with_writer(tracing_appender::rolling::never(
+				&config_lock.log_file_root,
+				log_file_name,
+			))
 			.with_ansi(false)
-			.with_filter(tracing_subscriber::filter::LevelFilter::from_level(config_lock.log_level.into()))
+			.with_filter(tracing_subscriber::filter::LevelFilter::from_level(
+				config_lock.log_level.into(),
+			))
 			.with_filter(
 				EnvFilter::from_default_env()
 					.add_directive("hyper::proto::h1::io=info".parse().unwrap())
@@ -70,16 +97,19 @@ async fn main() {
 					.add_directive("hyper::proto::h1::role=info".parse().unwrap()),
 			);
 		tracing::subscriber::set_global_default(
-			tracing_subscriber::registry()
-				.with(stdout_subscriber)
-				.with(file_subscriber),
+			tracing_subscriber::registry().with(stdout_subscriber).with(file_subscriber),
 		)
 		.expect("failed to set global default subscriber");
 
-		tracing::info!("=========================================================================");
+		tracing::info!(
+			"========================================================================="
+		);
 		tracing::info!("Logging initialized");
 		tracing::info!("Log level: {:?}", config_lock.log_level);
-		tracing::info!("Writing to file: {}", config_lock.log_file_root.join(log_file_name).display());
+		tracing::info!(
+			"Writing to file: {}",
+			config_lock.log_file_root.join(log_file_name).display()
+		);
 	}
 
 	web::initialize_server().await;

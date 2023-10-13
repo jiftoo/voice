@@ -10,7 +10,7 @@ use axum::body::{Bytes, StreamBody};
 use axum::debug_handler;
 use axum::extract::multipart::MultipartRejection;
 use axum::extract::ws::rejection::WebSocketUpgradeRejection;
-use axum::extract::ws::{self, CloseFrame, WebSocket};
+use axum::extract::ws::{self, WebSocket};
 use axum::extract::{DefaultBodyLimit, Multipart, Path, Query, State, WebSocketUpgrade};
 use axum::http::header::{CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_TYPE};
 use axum::http::{HeaderMap, StatusCode};
@@ -20,12 +20,14 @@ use axum::{
 	Router,
 };
 
+
 use tokio::sync::{RwLock, RwLockReadGuard};
 use tokio_util::io::ReaderStream;
 use tower_http::cors::{AllowHeaders, AllowOrigin};
+use tower_http::services::ServeDir;
 
 use crate::config::CONFIG;
-use crate::task::{Task, TaskId, TaskStatus};
+use crate::task::{Task, TaskId, TaskStatus, TaskUpdateMessage};
 use crate::{config, task};
 
 struct TaskManager {
@@ -34,9 +36,7 @@ struct TaskManager {
 
 impl TaskManager {
 	fn new() -> Self {
-		Self {
-			tasks: Arc::new(RwLock::new(HashMap::new())),
-		}
+		Self { tasks: Arc::new(RwLock::new(HashMap::new())) }
 	}
 
 	async fn new_task(&self, input_data: impl AsRef<[u8]>) -> io::Result<TaskId> {
@@ -49,8 +49,12 @@ impl TaskManager {
 
 		tokio::fs::write(&input_file_path, input_data).await?;
 
-		let task =
-			Task::new(input_file_path, task_id, &config_lock.outputs_dir, config_lock.ffmpeg_executable.clone())?;
+		let task = Task::new(
+			input_file_path,
+			task_id,
+			&config_lock.outputs_dir,
+			config_lock.ffmpeg_executable.clone(),
+		)?;
 
 		self.tasks.write().await.insert(task_id, task);
 
@@ -70,16 +74,14 @@ struct AppState {
 }
 
 pub async fn initialize_server() {
-	let app_state: AppState = AppState {
-		task_manager: Arc::new(TaskManager::new()),
-	};
+	let app_state: AppState = AppState { task_manager: Arc::new(TaskManager::new()) };
 
 	let router = Router::new()
 		.route("/submit", post(submit))
 		.route("/status", get(status))
 		.route("/status_ws", get(status_ws))
 		.route("/videos/:video", get(videos))
-		.route("/*0", get(|| async { "Fallback route" }))
+		.fallback_service(ServeDir::new(CONFIG.read().await.web_root.clone()))
 		.with_state(app_state)
 		.layer(DefaultBodyLimit::max(config::CONFIG.read().await.max_file_size as usize))
 		.layer(
@@ -93,10 +95,7 @@ pub async fn initialize_server() {
 
 	let addr = SocketAddr::from(([127, 0, 0, 1], config::CONFIG.read().await.port));
 	tracing::debug!("Started server on {}", addr);
-	axum::Server::bind(&addr)
-		.serve(router.into_make_service())
-		.await
-		.unwrap();
+	axum::Server::bind(&addr).serve(router.into_make_service()).await.unwrap();
 }
 
 enum EndpointResult<T: IntoResponse> {
@@ -121,7 +120,8 @@ async fn parse_multipart<'a>(multipart: &mut Multipart) -> Result<Bytes, Cow<'a,
 			return Err("No name for field".into());
 		};
 		if name == "file" {
-			let is_good_mime = a.content_type().map(|x| x.starts_with("video/")).unwrap_or(false);
+			let is_good_mime =
+				a.content_type().map(|x| x.starts_with("video/")).unwrap_or(false);
 			if is_good_mime {
 				return a.bytes().await.map_err(|_| "Failed to read body".into());
 			}
@@ -145,13 +145,18 @@ async fn drain_multipart(mut multipart: Multipart) {
 /// Returns the id of the encoding task, which the client may later query
 /// or an error along with an explanation message if the request is malformed.
 #[debug_handler]
-async fn submit(state: State<AppState>, multipart: Result<Multipart, MultipartRejection>) -> EndpointResult<String> {
+async fn submit(
+	state: State<AppState>,
+	multipart: Result<Multipart, MultipartRejection>,
+) -> EndpointResult<String> {
 	tracing::debug!("submit {:?}", multipart.as_ref().map(|_| ()));
 	match multipart {
 		Ok(mut multipart) => {
 			let input_data = match parse_multipart(&mut multipart).await {
 				Ok(x) => x,
-				Err(msg) => return EndpointResult::Err(StatusCode::BAD_REQUEST, Some(msg)),
+				Err(msg) => {
+					return EndpointResult::Err(StatusCode::BAD_REQUEST, Some(msg))
+				}
 			};
 
 			// drain the request so it's possible to send a response
@@ -165,13 +170,18 @@ async fn submit(state: State<AppState>, multipart: Result<Multipart, MultipartRe
 				Err(err) => {
 					let err_string = err.to_string();
 					tracing::error!("Failed to start task: {}", err_string);
-					return EndpointResult::Err(StatusCode::INTERNAL_SERVER_ERROR, Some(err_string.into()));
+					return EndpointResult::Err(
+						StatusCode::INTERNAL_SERVER_ERROR,
+						Some(err_string.into()),
+					);
 				}
 			};
 
 			EndpointResult::Accepted(task_id.to_string())
 		}
-		Err(err) => EndpointResult::Err(StatusCode::BAD_REQUEST, Some(err.to_string().into())),
+		Err(err) => {
+			EndpointResult::Err(StatusCode::BAD_REQUEST, Some(err.to_string().into()))
+		}
 	}
 }
 
@@ -204,39 +214,45 @@ async fn status_ws(
 			return EndpointResult::Err(err.status(), None);
 		}
 	};
+
+	// reject upgrade if no task found
+	let rx = match state.task_manager.get_task(t).await {
+		Some(task) => task.subscribe().await,
+		None => {
+			tracing::info!("ws upgrade rejected: task not found");
+			return EndpointResult::Err(StatusCode::NOT_FOUND, None);
+		}
+	};
+
 	EndpointResult::Ok(
 		ws.on_failed_upgrade(|_| tracing::info!("ws upgrade failed"))
-			.on_upgrade(move |ws| ws_handler(ws, state, t)),
+			.on_upgrade(move |ws| ws_handler(ws, t, rx)),
 	)
 }
 
-async fn ws_handler(mut ws: WebSocket, state: State<AppState>, target_task: TaskId) {
+async fn ws_handler(
+	mut ws: WebSocket,
+	target_task: TaskId,
+	mut task_rx: tokio::sync::broadcast::Receiver<TaskUpdateMessage>,
+) {
 	tracing::info!("ws connected");
 	if ws.send(ws::Message::Ping(Vec::new())).await.is_err() {
 		tracing::info!("can't ping ws");
 		return;
 	}
 
-	let Some(rx) = state.task_manager.get_task(target_task).await else {
-		let _ = ws
-			.send(ws::Message::Close(Some(CloseFrame {
-				code: 0,
-				reason: "task not found".into(),
-			})))
-			.await;
-		tracing::info!("ws task not found {}", target_task);
-		return;
-	};
-
-	let mut rx = rx.subscribe().await;
-
 	tokio::spawn(async move {
 		loop {
-			let rcv = rx.recv().await;
+			let rcv = task_rx.recv().await;
 			match rcv {
 				Ok(msg) => {
-					if let Err(x) = ws.send(ws::Message::Text(serde_json::to_string(&msg.1).unwrap())).await {
-						tracing::info!("failed to send ws message for {target_task}: {x:?}");
+					if let Err(x) = ws
+						.send(ws::Message::Text(serde_json::to_string(&msg.1).unwrap()))
+						.await
+					{
+						tracing::info!(
+							"failed to send ws message for {target_task}: {x:?}"
+						);
 					};
 
 					if matches!(msg.1, TaskStatus::Error(_) | TaskStatus::Completed) {
@@ -269,14 +285,20 @@ async fn videos(
 ) -> EndpointResult<(HeaderMap, StreamBody<ReaderStream<tokio::fs::File>>)> {
 	if let Some(task) = state.task_manager.get_task(task_id).await {
 		if matches!(task.last_status().await, TaskStatus::InProgress { .. }) {
-			return EndpointResult::Err(StatusCode::NOT_FOUND, Some("video not found".into()));
+			return EndpointResult::Err(
+				StatusCode::NOT_FOUND,
+				Some("video not found".into()),
+			);
 		}
 	}
 
 	let file_path = CONFIG.read().await.outputs_dir.join(task_id.to_string());
 	let Ok(file_handle) = tokio::fs::File::open(file_path).await else {
 		// usually
-		return EndpointResult::Err(StatusCode::NOT_FOUND, Some("video not found".into()));
+		return EndpointResult::Err(
+			StatusCode::NOT_FOUND,
+			Some("video not found".into()),
+		);
 	};
 
 	let mut headers = HeaderMap::new();
