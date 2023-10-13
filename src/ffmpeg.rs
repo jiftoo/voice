@@ -102,6 +102,7 @@ impl FFmpeg {
 		let mut ffmpeg = self.prepare_command();
 		ffmpeg
 			.arg("-vn")
+			.arg("-hide_banner")
 			.arg("-af")
 			.arg(format!(
 				"silencedetect=noise={SILENCEDETECT_NOISE}:d={SILENCEDETECT_DURATION},ametadata=mode=print:file=-"
@@ -117,7 +118,11 @@ impl FFmpeg {
 		let stdout = output.stdout;
 		let stderr_text = String::from_utf8(output.stderr).unwrap();
 
-		if !ffmpeg.status().await.unwrap().success() {
+		let perms = tokio::fs::metadata(&self.input).await.unwrap().permissions();
+		tracing::debug!("perms: {:?}", perms);
+		let status = ffmpeg.status().await.unwrap();
+		if !status.success() {
+			tracing::debug!("silence status: {status:?}");
 			return Err(FFmpegError::FFmpeg(stderr_text));
 		}
 
