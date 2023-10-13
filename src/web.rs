@@ -189,7 +189,7 @@ async fn status(
 		return EndpointResult::Err(StatusCode::NOT_FOUND, Some("task not found".into()));
 	};
 
-	EndpointResult::Ok(status.last_status().await.to_string())
+	EndpointResult::Ok(serde_json::to_string(&status.last_status().await).unwrap())
 }
 
 #[debug_handler]
@@ -228,27 +228,31 @@ async fn ws_handler(mut ws: WebSocket, state: State<AppState>, target_task: Task
 		tracing::info!("ws task not found {}", target_task);
 		return;
 	};
+
 	let mut rx = rx.subscribe().await;
 
 	tokio::spawn(async move {
-		while let Ok(msg) = rx.recv().await {
-			let mut abort = false;
-			let message = match msg.1 {
-				status @ (TaskStatus::Error(_) | TaskStatus::Completed) => {
-					abort = true;
-					status.to_string()
-				}
-				status @ TaskStatus::InProgress(_) => status.to_string(),
-			};
+		loop {
+			let rcv = rx.recv().await;
+			match rcv {
+				Ok(msg) => {
+					if let Err(x) = ws.send(ws::Message::Text(serde_json::to_string(&msg.1).unwrap())).await {
+						tracing::info!("failed to send ws message for {target_task}: {x:?}");
+					};
 
-			let Ok(a) = ws.send(ws::Message::Text(message.clone())).await else {
-				tracing::info!("failed to send ws message");
-				break;
-			};
-			if abort {
-				// give axum time to flush the socket
-				tokio::time::sleep(Duration::from_millis(500)).await;
-				break;
+					if matches!(msg.1, TaskStatus::Error(_) | TaskStatus::Completed) {
+						// give axum time to flush the socket
+						tokio::time::sleep(Duration::from_millis(500)).await;
+						let _ = ws.close().await;
+						break;
+					}
+				}
+				Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+					tracing::warn!("tx closed for {target_task}");
+				}
+				Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+					tracing::warn!("rx lagged by {n} for {target_task}");
+				}
 			}
 		}
 	});
@@ -265,7 +269,7 @@ async fn videos(
 	query: Option<Query<VideoDlQuery>>,
 ) -> EndpointResult<(HeaderMap, StreamBody<ReaderStream<tokio::fs::File>>)> {
 	if let Some(task) = state.task_manager.get_task(task_id).await {
-		if matches!(task.last_status().await, TaskStatus::InProgress(_)) {
+		if matches!(task.last_status().await, TaskStatus::InProgress { .. }) {
 			return EndpointResult::Err(StatusCode::NOT_FOUND, Some("video not found".into()));
 		}
 	}
