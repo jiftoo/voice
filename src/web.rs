@@ -20,7 +20,6 @@ use axum::{
 	Router,
 };
 
-
 use tokio::sync::{RwLock, RwLockReadGuard};
 use tokio_util::io::ReaderStream;
 use tower_http::cors::{AllowHeaders, AllowOrigin};
@@ -93,7 +92,7 @@ pub async fn initialize_server() {
 				.expose_headers([CONTENT_TYPE, CONTENT_LENGTH]),
 		);
 
-	let addr = SocketAddr::from(([127, 0, 0, 1], config::CONFIG.read().await.port));
+	let addr = SocketAddr::from(([0, 0, 0, 0], config::CONFIG.read().await.port));
 	tracing::debug!("Started server on {}", addr);
 	axum::Server::bind(&addr).serve(router.into_make_service()).await.unwrap();
 }

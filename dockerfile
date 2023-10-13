@@ -15,4 +15,4 @@ RUN apk add --no-cache gcompat libstdc++ ffmpeg
 COPY --from=0 /dist/web /web
 COPY --from=0 /dist/target/x86_64-unknown-linux-gnu/release/voice /voice
 ENTRYPOINT ["/voice"]
-EXPOSE 3000
+EXPOSE 80
