@@ -56,6 +56,8 @@ pub struct Config {
 	pub max_file_size: u64,
 	/// port to bind to
 	pub port: u16,
+	/// delete input/output files after this many minutes
+	pub delete_files_after_minutes: u64,
 }
 
 impl Default for Config {
@@ -72,6 +74,7 @@ impl Default for Config {
 			ffmpeg_executable: PathBuf::from("ffmpeg"),
 			max_file_size: 1024 * 1024 * 1024, // 1 GiB
 			port: 80,
+			delete_files_after_minutes: 60,
 		}
 	}
 }

@@ -60,6 +60,49 @@ impl TaskManager {
 		Ok(task_id)
 	}
 
+	async fn cleanup_tasks(&self) {
+		let config_lock = CONFIG.read().await;
+		let current_time = time::OffsetDateTime::now_utc();
+		let mut keys_to_delete = Vec::new();
+		let mut tasks_lock = self.tasks.write().await;
+		for (id, task) in tasks_lock.iter() {
+			let status = task.last_status().await;
+			if let TaskStatus::Completed { end_time } = status {
+				let to_delete = end_time
+					+ time::Duration::minutes(
+						config_lock.delete_files_after_minutes as i64,
+					) < current_time;
+				if to_delete {
+					tracing::info!("deleting task {}", id);
+					keys_to_delete.push(*id);
+				}
+			}
+		}
+		tasks_lock.retain(|k, _| !keys_to_delete.contains(k));
+	}
+
+	async fn cleanup_task_files(&self) {
+		let config_lock = CONFIG.read().await;
+		for dir_entry in config_lock.outputs_dir.read_dir().unwrap().flatten() {
+			let file_name = dir_entry.file_name().to_string_lossy().to_string();
+			if let Ok(task_id) = file_name.parse::<TaskId>() {
+				if !self.tasks.read().await.contains_key(&task_id) {
+					tracing::info!("cleaning output file {}", task_id);
+					let _ = tokio::fs::remove_file(dir_entry.path()).await;
+				}
+			}
+		}
+		for dir_entry in config_lock.inputs_dir.read_dir().unwrap().flatten() {
+			let file_name = dir_entry.file_name().to_string_lossy().to_string();
+			if let Ok(task_id) = file_name.parse::<TaskId>() {
+				if !self.tasks.read().await.contains_key(&task_id) {
+					tracing::info!("cleaning input file {}", task_id);
+					let _ = tokio::fs::remove_file(dir_entry.path()).await;
+				}
+			}
+		}
+	}
+
 	async fn get_task(&self, id: TaskId) -> Option<RwLockReadGuard<Task>> {
 		let a = self.tasks.read().await;
 		a.get(&id)?;
@@ -72,8 +115,20 @@ struct AppState {
 	task_manager: Arc<TaskManager>,
 }
 
+fn spawn_task_cleaner(task_manager: Arc<TaskManager>) {
+	tokio::task::spawn(async move {
+		loop {
+			tokio::time::sleep(Duration::from_secs(60)).await;
+			task_manager.cleanup_tasks().await;
+			task_manager.cleanup_task_files().await;
+		}
+	});
+}
+
 pub async fn initialize_server() {
 	let app_state: AppState = AppState { task_manager: Arc::new(TaskManager::new()) };
+
+	spawn_task_cleaner(app_state.task_manager.clone());
 
 	let router = Router::new()
 		.route("/submit", post(submit))
@@ -254,7 +309,10 @@ async fn ws_handler(
 						);
 					};
 
-					if matches!(msg.1, TaskStatus::Error(_) | TaskStatus::Completed) {
+					if matches!(
+						msg.1,
+						TaskStatus::Error(_) | TaskStatus::Completed { .. }
+					) {
 						// give axum time to flush the socket
 						tokio::time::sleep(Duration::from_millis(500)).await;
 						let _ = ws.close().await;

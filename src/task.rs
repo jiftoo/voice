@@ -7,7 +7,7 @@ use std::{
 
 use rand::Rng;
 use tokio::{
-	io::{self, AsyncBufReadExt, AsyncReadExt, BufReader},
+	io::{self, AsyncBufReadExt, BufReader},
 	sync::RwLock,
 };
 
@@ -28,7 +28,8 @@ struct InnerTask {
 /// the task's files are stored.
 #[derive(Debug)]
 pub struct Task {
-	id: TaskId,
+	pub id: TaskId,
+	start_time: time::OffsetDateTime,
 	tokio_handle: tokio::task::JoinHandle<()>,
 	inner: Arc<RwLock<InnerTask>>,
 }
@@ -43,7 +44,9 @@ pub enum TaskStatus {
 	},
 	#[serde(serialize_with = "display_serialize")]
 	Error(FFmpegError),
-	Completed,
+	Completed {
+		end_time: time::OffsetDateTime,
+	},
 }
 
 fn display_serialize<S: serde::Serializer, T: Display>(
@@ -137,7 +140,9 @@ impl Task {
 
 				// ignore send result
 				let final_status = match conversion_result {
-					Ok(_) => TaskStatus::Completed,
+					Ok(_) => TaskStatus::Completed {
+						end_time: time::OffsetDateTime::now_utc(),
+					},
 					Err(msg) => TaskStatus::Error(msg),
 				};
 
@@ -151,13 +156,23 @@ impl Task {
 			}
 		});
 
-		Ok(Self { tokio_handle, id: task_id, inner: inner_task })
+		Ok(Self {
+			tokio_handle,
+			id: task_id,
+			inner: inner_task,
+			start_time: time::OffsetDateTime::now_utc(),
+		})
 	}
 
 	pub async fn cancel(self) {
 		self.tokio_handle.abort();
 		let mut this = self.inner.write().await;
-		Self::update_status(&mut this, self.id, TaskStatus::Completed).await;
+		Self::update_status(
+			&mut this,
+			self.id,
+			TaskStatus::Completed { end_time: time::OffsetDateTime::now_utc() },
+		)
+		.await;
 	}
 
 	pub async fn subscribe(&self) -> tokio::sync::broadcast::Receiver<TaskUpdateMessage> {
@@ -166,6 +181,10 @@ impl Task {
 
 	pub async fn last_status(&self) -> TaskStatus {
 		self.inner.read().await.last_status.clone()
+	}
+
+	pub fn last_status_blocking(&self) -> TaskStatus {
+		self.inner.blocking_read().last_status.clone()
 	}
 
 	pub fn gen_id() -> TaskId {
@@ -271,7 +290,7 @@ impl Task {
 					StatsParse::Time(new_time) => {
 						let new_progress =
 							new_time.as_secs_f32() / (playtime_after_conversion_s);
-						*progress = new_progress;
+						*progress = new_progress.min(1.0); // may overflow a little somtimes
 					}
 					_ => {
 						// nothing was updated
