@@ -71,7 +71,7 @@
 							window.location.assign("completed.html?t=" + queryToken);
 							break;
 						case "error":
-							message = `Error:<br><div>${data.error}</div>`;
+							message = `Error:<br><div>${data}</div>`;
 							break;
 						default:
 							message = "Unknown message: " + encodeURIComponent(ev.data);
