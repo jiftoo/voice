@@ -71,7 +71,7 @@ impl Default for Config {
 			web_root: PathBuf::from("./web"),
 			ffmpeg_executable: PathBuf::from("ffmpeg"),
 			max_file_size: 1024 * 1024 * 1024, // 1 GiB
-			port: 3000,
+			port: 80,
 		}
 	}
 }
