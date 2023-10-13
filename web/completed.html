@@ -23,7 +23,7 @@
 			const queryToken = urlParams.get("t");
 			if (queryToken && !Number.isNaN(queryToken)) {
 				let video = document.createElement("video");
-				video.src = "http://localhost:3000/videos/" + queryToken;
+				video.src = "/videos/" + queryToken;
 				video.controls = true;
 
 				fetch(video.src, {

@@ -41,6 +41,11 @@ async fn main() {
 			std::process::exit(1);
 		}
 
+		if !config_lock.web_dir_found() {
+			println!("error: web directory not found. specified path: \"{}\"", config_lock.web_root.display());
+			std::process::exit(1);
+		}
+
 		// initialize logging
 
 		let log_file_name = "log.txt";
