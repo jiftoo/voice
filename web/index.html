@@ -64,7 +64,11 @@
 
 					switch (type) {
 						case "inProgress":
-							message = `Progress: ${(data.progress * 100).toFixed(1)}%\nSpeed: ${data.speed}x`;
+							if (data.progress === 0) {
+								message = `Analyzing...`;
+							} else {
+								message = `Progress: ${(data.progress * 100).toFixed(1)}%\nSpeed: ${data.speed}x`;
+							}
 							break;
 						case "completed":
 							message = `Completed!`;
@@ -119,6 +123,11 @@
 			});
 
 			file.addEventListener("change", async (e) => {
+				// close if user is watching a processing already
+				if (currentSocket) {
+					currentSocket.close();
+				}
+
 				console.log(e.target, e.currentTarget, e.relatedTarget);
 				uploadRegion.classList.remove("file-hover");
 
@@ -131,20 +140,32 @@
 
 				uploadRegionMessage.innerHTML = "Uploading...";
 
-				let [status, taskId] = await fetch("/submit", {
-					method: "POST",
-					body: formData,
-				})
-					.then(async (res) => [res.status, await res.text()])
-					.then(([status, taskId]) => {
-						console.log(status, taskId);
-						return [status, taskId];
-					})
-					.catch((err) => {
-						uploadRegionMessage.innerHTML = "Error!";
-						console.log(err);
-						return [0, null];
+				let xhr = new XMLHttpRequest();
+				const [status, taskId] = await new Promise((r, f) => {
+					xhr.upload.addEventListener("progress", (ev) => {
+						if (ev.lengthComputable) {
+							console.log("progress", ev.loaded / ev.total);
+							uploadRegionMessage.innerHTML = `Uploading ${((ev.loaded / ev.total) * 100).toFixed(0)}%`;
+						}
 					});
+					xhr.addEventListener("loadend", (ev) => {
+						if (xhr.readyState === 4) {
+							console.log(xhr.status, xhr.response);
+							r([xhr.status, xhr.response]);
+						} else {
+							r([0, xhr.readyState]);
+						}
+					});
+					xhr.addEventListener("error", (e) => {
+						r([0, e.type]);
+					});
+					xhr.addEventListener("abort", (e) => {
+						r([0, e.type]);
+					});
+					xhr.open("POST", "/submit", true);
+					xhr.send(formData);
+				});
+
 				if (status == 202) {
 					uploadRegionMessage.innerHTML = "Done!";
 				} else if (status == 400) {
@@ -152,6 +173,9 @@
 					return;
 				} else if (status == 404) {
 					uploadRegionMessage.innerHTML = "Not found";
+					return;
+				} else {
+					uploadRegionMessage.innerHTML = "Error: " + taskId;
 					return;
 				}
 
