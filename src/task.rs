@@ -1,387 +1,305 @@
 use std::{
-	fmt::Debug,
-	fs,
-	mem::discriminant,
-	path::PathBuf,
-	sync::{Arc, Mutex},
+	fmt::Display,
+	path::{Path, PathBuf},
+	sync::Arc,
 	time::Duration,
 };
 
-use crate::{
-	ffmpeg::{
-		self, FFMpegFuture, FFMpegReadyFuture, FFMpegThreadFuture, FFMpegThreadStatus,
-		VideoPeriods,
-	},
-	video::VideoFileHandle,
+use rand::Rng;
+use tokio::{
+	io::{self, AsyncBufReadExt, BufReader},
+	sync::RwLock,
 };
 
-#[derive(Debug, Clone)]
-pub struct StageInfo {
-	pub time_start: std::time::Instant,
-	pub time_end: std::time::Instant,
-	pub progress: Arc<Mutex<f32>>,
+use crate::ffmpeg::{FFmpeg, FFmpegError};
+
+pub type TaskUpdateSender = tokio::sync::broadcast::Sender<TaskUpdateMessage>;
+
+#[derive(Debug)]
+struct InnerTask {
+	last_status: TaskStatus,
+	task_update_tx: TaskUpdateSender,
 }
 
-impl StageInfo {
-	pub fn create(progress: Arc<Mutex<f32>>) -> Self {
-		Self {
-			time_start: std::time::Instant::now(),
-			time_end: std::time::Instant::now(),
-			progress,
+/// Represents a task that is currently running
+/// with a handle to the encoder process
+///
+/// `dir_name` is the name of the directory where
+/// the task's files are stored.
+#[derive(Debug)]
+pub struct Task {
+	pub id: TaskId,
+	start_time: time::OffsetDateTime,
+	tokio_handle: tokio::task::JoinHandle<()>,
+	inner: Arc<RwLock<InnerTask>>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(tag = "type", content = "data")]
+pub enum TaskStatus {
+	InProgress {
+		progress: f32,
+		speed: f32,
+	},
+	#[serde(serialize_with = "display_serialize")]
+	Error(FFmpegError),
+	Completed {
+		end_time: time::OffsetDateTime,
+	},
+}
+
+fn display_serialize<S: serde::Serializer, T: Display>(x: &T, s: S) -> Result<S::Ok, S::Error> {
+	s.collect_str(x)
+}
+
+/// id of task
+/// also used as name of task's input and output files
+pub type TaskId = u64;
+pub type TaskUpdateMessage = (TaskId, TaskStatus);
+
+macro_rules! try_else {
+	($expr:expr, $vn:ident, $div:block) => {
+		match $expr {
+			Result::Ok(val) => val,
+			Result::Err($vn) => $div,
 		}
-	}
+	};
 }
 
-pub enum EncodingStage {
-	Idle {
-		info: StageInfo,
-	},
-	CountFrames {
-		info: StageInfo,
-		frames: FFMpegThreadFuture<usize>,
-	},
-	DetectSilence {
-		info: StageInfo,
-		frames: usize,
-		periods: FFMpegThreadFuture<VideoPeriods>,
-	},
-	Split {
-		info: StageInfo,
-		frames: usize,
-		periods: VideoPeriods,
-		ffmpeg: FFMpegThreadFuture<()>,
-	},
-	Concat {
-		info: StageInfo,
-		frames: usize,
-		periods: VideoPeriods,
-		ffmpeg: FFMpegThreadFuture<()>,
-	},
-	Move {
-		info: StageInfo,
-		frames: usize,
-		periods: VideoPeriods,
-		mv: FFMpegReadyFuture<PathBuf>,
-	},
-	ReEncode {
-		info: StageInfo,
-		frames: usize,
-		periods: VideoPeriods,
-		ffmpeg: Box<dyn FFMpegFuture<()>>,
-	},
-	Complete {
-		info: StageInfo,
-		frames: usize,
-		periods: VideoPeriods,
-	},
+enum StatsParse {
+	Time(Duration),
+	Speed(f32),
+	/// error or not any other stat
+	Other,
 }
 
-impl Debug for EncodingStage {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			EncodingStage::Idle { info } => {
-				f.debug_struct("Idle").field("info", info).finish()
-			}
-			EncodingStage::CountFrames { info, .. } => {
-				f.debug_struct("CountFrames").field("info", info).finish()
-			}
-			EncodingStage::DetectSilence { info, .. } => {
-				f.debug_struct("DetectSilence").field("info", info).finish()
-			}
-			EncodingStage::Split { info, .. } => {
-				f.debug_struct("Split").field("info", info).finish()
-			}
-			EncodingStage::Concat { info, .. } => {
-				f.debug_struct("Concat").field("info", info).finish()
-			}
-			EncodingStage::Move { info, .. } => {
-				f.debug_struct("Move").field("info", info).finish()
-			}
-			EncodingStage::ReEncode { info, .. } => {
-				f.debug_struct("ReEncode").field("info", info).finish()
-			}
-			EncodingStage::Complete { info, .. } => {
-				f.debug_struct("Complete").field("info", info).finish()
-			}
-		}
-	}
-}
+impl StatsParse {
+	fn parse_line(line: &str) -> Self {
+		let mut line = line.split('=');
 
-impl EncodingStage {
-	pub fn advance(
-		mut self,
-		task: &EncodingTask<Running>,
-	) -> (Option<StageInfo>, EncodingStage) {
-		let self_info_clone = self.info_mut().clone();
-		let disc1 = discriminant(&self);
-
-		let now = std::time::Instant::now();
-		self.info_mut().time_end = now;
-
-		use EncodingStage::*;
-		let next_stage = match self {
-			Idle { .. } => {
-				let frames = Self::count_frames(&task.file_handle);
-				CountFrames { info: StageInfo::create(frames.get_progress()), frames }
-			}
-			mut stage @ CountFrames { .. } => match &mut stage {
-				CountFrames { frames, .. } => match frames.poll() {
-					FFMpegThreadStatus::Aborted(_) => todo!(),
-					FFMpegThreadStatus::Running => stage,
-					FFMpegThreadStatus::Finished(frames) => {
-						let periods = Self::detect_silence(&task.file_handle, frames);
-						DetectSilence {
-							info: StageInfo::create(periods.get_progress()),
-							frames,
-							periods,
-						}
-					}
-				},
-				_ => unreachable!(),
-			},
-			mut stage @ DetectSilence { .. } => match &mut stage {
-				DetectSilence { periods, frames, .. } => match periods.poll() {
-					FFMpegThreadStatus::Aborted(_) => todo!(),
-					FFMpegThreadStatus::Running => stage,
-					FFMpegThreadStatus::Finished(periods) => {
-						let ffmpeg =
-							Self::split_fragments(&task.file_handle, periods.clone());
-						Split {
-							info: StageInfo::create(ffmpeg.get_progress()),
-							frames: *frames,
-							ffmpeg,
-							periods,
-						}
-					}
-				},
-				_ => unreachable!(),
-			},
-			mut stage @ Split { .. } => match &mut stage {
-				Split { periods, frames, ffmpeg, .. } => match ffmpeg.poll() {
-					FFMpegThreadStatus::Aborted(_) => todo!(),
-					FFMpegThreadStatus::Running => stage,
-					FFMpegThreadStatus::Finished(_) => {
-						let ffmpeg = Self::concat_fragments(&task.file_handle, *frames);
-						Concat {
-							info: StageInfo::create(ffmpeg.get_progress()),
-							frames: *frames,
-							periods: periods.clone(),
-							ffmpeg,
-						}
-					}
-				},
-				_ => unreachable!(),
-			},
-			mut stage @ Concat { .. } => match &mut stage {
-				Concat { periods, frames, ffmpeg, .. } => match ffmpeg.poll() {
-					FFMpegThreadStatus::Aborted(_) => todo!(),
-					FFMpegThreadStatus::Running => stage,
-					FFMpegThreadStatus::Finished(_) => {
-						let mv = Self::move_output(&task.file_handle);
-						Move {
-							info: StageInfo::create(mv.get_progress()),
-							frames: *frames,
-							periods: periods.clone(),
-							mv,
-						}
-					}
-				},
-				_ => unreachable!(),
-			},
-			mut stage @ Move { .. } => match &mut stage {
-				Move { periods, frames, mv, .. } => match mv.poll() {
-					FFMpegThreadStatus::Aborted(_) => todo!(),
-					FFMpegThreadStatus::Running => stage,
-					FFMpegThreadStatus::Finished(_) => ReEncode {
-						info: StageInfo::create(mv.get_progress()),
-						frames: *frames,
-						periods: periods.clone(),
-						ffmpeg: Box::new(Self::re_encode(*frames)),
-					},
-				},
-				_ => unreachable!(),
-			},
-			mut stage @ ReEncode { .. } => match &mut stage {
-				ReEncode { periods, frames, ffmpeg, .. } => match ffmpeg.poll() {
-					FFMpegThreadStatus::Aborted(_) => todo!(),
-					FFMpegThreadStatus::Running => stage,
-					FFMpegThreadStatus::Finished(_) => Complete {
-						info: StageInfo::create(
-							FFMpegReadyFuture::new(()).get_progress(),
-						),
-						frames: *frames,
-						periods: periods.clone(),
-					},
-				},
-				_ => unreachable!(),
-			},
-			stage @ Complete { .. } => stage,
+		let Some(lhs) = line.next() else {
+			return Self::Other;
+		};
+		let Some(rhs) = line.next() else {
+			return Self::Other;
 		};
 
-		(
-			if disc1 == discriminant(&next_stage) { None } else { Some(self_info_clone) },
-			next_stage,
-		)
-	}
-
-	pub fn info_mut(&mut self) -> &mut StageInfo {
-		match self {
-			Self::Idle { info } => info,
-			Self::CountFrames { info, .. } => info,
-			Self::DetectSilence { info, .. } => info,
-			Self::Split { info, .. } => info,
-			Self::Concat { info, .. } => info,
-			Self::Move { info, .. } => info,
-			Self::ReEncode { info, .. } => info,
-			Self::Complete { info, .. } => info,
+		match lhs {
+			"out_time_ms" => rhs
+				.parse::<i64>()
+				.map(|x| {
+					// time is negative during first frame
+					Self::Time(Duration::from_micros(x.max(0) as u64))
+				})
+				.unwrap_or(Self::Other),
+			"speed" => rhs
+				.trim_end_matches('x')
+				.parse::<f32>()
+				.map(Self::Speed)
+				.unwrap_or(Self::Other),
+			_ => Self::Other,
 		}
 	}
+}
 
-	pub fn info(&self) -> &StageInfo {
-		match self {
-			Self::Idle { info } => info,
-			Self::CountFrames { info, .. } => info,
-			Self::DetectSilence { info, .. } => info,
-			Self::Split { info, .. } => info,
-			Self::Concat { info, .. } => info,
-			Self::Move { info, .. } => info,
-			Self::ReEncode { info, .. } => info,
-			Self::Complete { info, .. } => info,
-		}
+impl Task {
+	/// initialize and start a new task
+	/// also start a tokio task
+	/// to observe it
+	pub fn new(
+		input_file: PathBuf,
+		task_id: TaskId,
+		outputs_dir: &Path,
+		ffmpeg_executable: PathBuf,
+	) -> io::Result<Task> {
+		let output_file = outputs_dir.join(format!("{task_id}"));
+
+		let last_status = TaskStatus::InProgress {
+			progress: 0.0,
+			speed: 0.0,
+		};
+		let task_update_tx = tokio::sync::broadcast::Sender::new(8);
+
+		let inner_task = Arc::new(RwLock::new(InnerTask {
+			last_status,
+			task_update_tx: task_update_tx.clone(),
+		}));
+
+		let tokio_handle = tokio::task::spawn({
+			let inner_task = inner_task.clone();
+			async move {
+				let conversion_result =
+					Self::run_conversion(input_file, output_file, ffmpeg_executable, inner_task.clone(), task_id).await;
+
+				// ignore send result
+				let final_status = match conversion_result {
+					Ok(_) => TaskStatus::Completed {
+						end_time: time::OffsetDateTime::now_utc(),
+					},
+					Err(msg) => TaskStatus::Error(msg),
+				};
+
+				tracing::debug!("sent last update: {final_status:?}");
+				Self::update_status(&mut *inner_task.write().await, task_id, final_status).await;
+			}
+		});
+
+		Ok(Self {
+			tokio_handle,
+			id: task_id,
+			inner: inner_task,
+			start_time: time::OffsetDateTime::now_utc(),
+		})
 	}
 
-	pub fn name(&self) -> &'static str {
-		match self {
-			Self::Idle { .. } => "Idle",
-			Self::CountFrames { .. } => "CountFrames",
-			Self::DetectSilence { .. } => "DetectSilence",
-			Self::Split { .. } => "Split",
-			Self::Concat { .. } => "Concat",
-			Self::Move { .. } => "Move",
-			Self::ReEncode { .. } => "ReEncode",
-			Self::Complete { .. } => "Complete",
-		}
-	}
-
-	fn count_frames(file_handle: &VideoFileHandle) -> ffmpeg::FFMpegThreadFuture<usize> {
-		// print!("counting frames");
-		ffmpeg::get_frame_length(&file_handle.path)
-	}
-
-	fn detect_silence(
-		file_handle: &VideoFileHandle,
-		total_frames: usize,
-	) -> FFMpegThreadFuture<VideoPeriods> {
-		// println!("detecting silence");
-		ffmpeg::detect_silence(
-			&file_handle.path,
-			Duration::from_millis(200),
-			total_frames,
+	pub async fn cancel(self) {
+		self.tokio_handle.abort();
+		let mut this = self.inner.write().await;
+		Self::update_status(
+			&mut this,
+			self.id,
+			TaskStatus::Completed {
+				end_time: time::OffsetDateTime::now_utc(),
+			},
 		)
+		.await;
 	}
 
-	fn split_fragments(
-		file_handle: &VideoFileHandle,
-		video_periods: VideoPeriods,
-	) -> FFMpegThreadFuture<()> {
-		// println!("splitting fragments");
-		ffmpeg::split_fragments(&file_handle.path, &file_handle.temp, video_periods)
+	pub async fn subscribe(&self) -> tokio::sync::broadcast::Receiver<TaskUpdateMessage> {
+		self.inner.read().await.task_update_tx.subscribe()
 	}
 
-	fn concat_fragments(
-		file_handle: &VideoFileHandle,
-		_total_frames: usize,
-	) -> FFMpegThreadFuture<()> {
-		// println!("concatenating fragments");
-		ffmpeg::concat_fragments(
-			&file_handle.temp,
-			format!(
-				"output_{}.mp4",
-				file_handle.path.file_stem().unwrap().to_str().unwrap()
-			),
-		)
-		.unwrap()
+	pub async fn last_status(&self) -> TaskStatus {
+		self.inner.read().await.last_status.clone()
 	}
 
-	fn move_output(file_handle: &VideoFileHandle) -> FFMpegReadyFuture<PathBuf> {
-		let output_filename = format!(
-			"output_{}.mp4",
-			file_handle.path.file_stem().unwrap().to_str().unwrap()
+	pub fn last_status_blocking(&self) -> TaskStatus {
+		self.inner.blocking_read().last_status.clone()
+	}
+
+	pub fn gen_id() -> TaskId {
+		rand::thread_rng().gen()
+	}
+
+	async fn update_status(inner: &mut InnerTask, id: TaskId, new_status: TaskStatus) {
+		inner.last_status = new_status.clone();
+		let _res = inner.task_update_tx.send((id, new_status.clone()));
+	}
+
+	async fn run_conversion(
+		input_file: PathBuf,
+		output_file: PathBuf,
+		ffmpeg_executable: PathBuf,
+		inner: Arc<RwLock<InnerTask>>,
+		task_id: TaskId,
+	) -> Result<(), FFmpegError> {
+		tracing::debug!("begin task");
+
+		let ffmpeg = FFmpeg::new(input_file.to_path_buf(), output_file, ffmpeg_executable.to_path_buf());
+
+		let analysis = try_else!(ffmpeg.analyze_silence().await, err, {
+			tracing::info!("analyze silence error: {:?}", err);
+			return Err(err);
+		});
+
+		let playtime_after_conversion_s = analysis.audible.iter().map(|x| x.end - x.start).sum::<f32>();
+
+		tracing::debug!(
+			"total playtime: {}s; playtime after conversion: {}s; playtime reduced by {}%",
+			analysis.duration.as_secs_f32(),
+			playtime_after_conversion_s,
+			(1.0 - playtime_after_conversion_s / analysis.duration.as_secs_f32()) * 100.0
 		);
-		let old_path = file_handle.temp.path().join(output_filename.clone());
-		let new_path = file_handle.temp.path().parent().unwrap().join(output_filename);
-		fs::rename(old_path, &new_path).unwrap();
 
-		FFMpegReadyFuture::new(new_path)
-	}
+		let mut child = try_else!(ffmpeg.spawn_remove_silence(&analysis.audible).await, err, {
+			tracing::info!("remove silence error: {:?}", err);
+			return Err(FFmpegError::IO(err.into()));
+		});
 
-	fn re_encode(_total_frames: usize) -> impl FFMpegFuture<()> {
-		println!("re-encoding is not implemented");
-		FFMpegReadyFuture::new(())
-	}
-}
+		let stdout = child.stdout.take().unwrap();
+		let mut lines = BufReader::new(stdout).lines();
 
-pub struct Stopped;
-pub struct Running {
-	thread: Option<std::thread::JoinHandle<()>>,
-}
+		let stderr = child.stderr.take().unwrap();
+		let mut err_lines = BufReader::new(stderr).lines();
+		let mut error_log = Vec::new();
+		// loop awaits on ffmpeg's stdout
+		loop {
+			// race reading an error and reading a line
+			// break if EOF
+			let line = tokio::select! {
+				_ = tokio::time::sleep(Duration::from_secs(1)) => {
+					tracing::warn!("ffmpeg lagging");
+					None
+				}
+				x = err_lines.next_line() => {
+					match x.unwrap() {
+						Some(x) => {
+							error_log.push(x);
+							None
+						},
+						None => None
+					}
 
-pub struct EncodingTask<T> {
-	stage: Option<EncodingStage>,
-	completed_stages: Arc<Mutex<Vec<StageInfo>>>,
-	file_handle: VideoFileHandle,
-	extra: T,
-}
+				}
+				x = lines.next_line() => x.unwrap()
+			};
 
-impl EncodingTask<Stopped> {
-	pub fn new(file_handle: VideoFileHandle) -> Self {
-		Self {
-			stage: EncodingStage::Idle {
-				info: StageInfo::create(FFMpegReadyFuture::new(()).get_progress()),
+			// abort if the process is done
+			match child.try_wait() {
+				Ok(None) => {}
+				Ok(Some(_)) => {
+					break;
+				}
+				err @ Err(_) => {
+					tracing::warn!("error while calling try_wait()");
+					err.unwrap();
+				}
 			}
-			.into(),
-			completed_stages: Arc::new(Mutex::new(Vec::new())),
-			file_handle,
-			extra: Stopped,
+
+			// skip iteration if the line is from stderr
+			let Some(line) = line else {
+				continue;
+			};
+
+			let mut inner_lock = inner.write().await;
+
+			// output_time_ms is the same as _us bug in ffmpeg
+			if let TaskStatus::InProgress {
+				ref mut progress,
+				ref mut speed,
+			} = inner_lock.last_status
+			{
+				match StatsParse::parse_line(&line) {
+					StatsParse::Speed(new_speed) => {
+						*speed = new_speed;
+					}
+					StatsParse::Time(new_time) => {
+						let new_progress = new_time.as_secs_f32() / (playtime_after_conversion_s);
+						*progress = new_progress.min(1.0); // may overflow a little somtimes
+					}
+					_ => {
+						// nothing was updated
+						continue;
+					}
+				}
+			}
+			let last_status = inner_lock.last_status.clone();
+			Self::update_status(&mut inner_lock, task_id, last_status).await;
+			tracing::debug!("status: {:?}", inner_lock.last_status);
 		}
-	}
 
-	pub fn start(self) -> EncodingTask<Running> {
-		EncodingTask {
-			stage: self.stage,
-			completed_stages: self.completed_stages.clone(),
-			file_handle: self.file_handle,
-			extra: Running { thread: None },
+		let status = child.wait().await.unwrap();
+		tracing::debug!("status: {:?} success: {}", status, status.success());
+
+		if status.success() {
+			Ok(())
+		} else {
+			Err(FFmpegError::FFmpeg(error_log.join("\n")))
 		}
-	}
-}
 
-impl EncodingTask<Running> {
-	pub fn poll(&mut self) -> &EncodingStage {
-		let completed_stages = self.completed_stages.clone();
-		let mut completed_stages = completed_stages.lock().unwrap();
-
-		let stage = self.stage.take().unwrap();
-		let new_stage = match stage.advance(self) {
-			(_, stage @ EncodingStage::Complete { .. }) => {
-				// println!("complete");
-				stage
-			}
-			(Some(stage_info), next_stage) => {
-				// println!("completed stage {:?}", stage_info);
-				completed_stages.push(stage_info);
-				next_stage
-			}
-			(None, current_stage) => current_stage,
-		};
-		self.stage = new_stage.into();
-
-		self.stage.as_ref().unwrap()
-	}
-
-	pub fn completed_stages(&self) -> Vec<StageInfo> {
-		let completed_stages = self.completed_stages.clone();
-		let completed_stages = completed_stages.lock().unwrap();
-		completed_stages.clone()
+		// if !error_log.is_empty() {
+		// 	tracing::info!("errors during task: {}", error_log.join("\n"));
+		// }
 	}
 }

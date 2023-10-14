@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<link rel="stylesheet" href="index.css" />
+		<link rel="stylesheet" href="completed.css" />
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link href="https://fonts.googleapis.com/css2?family=Gloria+Hallelujah&display=swap" rel="stylesheet" />
+		<title>Document</title>
+	</head>
+	<body>
+		<main>
+			<h1>Processed video:</h1>
+			<div id="completed-region" class="dashed"></div>
+		</main>
+		<script>
+			const uploadRegion = document.getElementById("completed-region");
+
+			let currentSocket = null;
+			const urlParams = new URLSearchParams(window.location.search);
+			const queryToken = urlParams.get("t");
+			if (queryToken && !Number.isNaN(queryToken)) {
+				let video = document.createElement("video");
+				video.src = "/videos/" + queryToken;
+				video.controls = true;
+
+				fetch(video.src, {
+					method: "HEAD",
+				}).then((res) => {
+					if (res.ok) {
+						uploadRegion.appendChild(video);
+					} else {
+						uploadRegion.innerHTML = "<h1>video not found</h1>";
+					}
+				});
+			}
+		</script>
+	</body>
+</html>

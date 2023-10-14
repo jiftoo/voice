@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<link rel="stylesheet" href="index.css" />
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link href="https://fonts.googleapis.com/css2?family=Gloria+Hallelujah&display=swap" rel="stylesheet" />
+		<title>Document</title>
+	</head>
+	<body>
+		<main>
+			<h1>Upload video!</h1>
+			<div id="upload-region" class="dashed">
+				<input type="file" id="file" accept="video/*" />
+				<div id="upload-region-message">Drop file here</div>
+			</div>
+		</main>
+		<script>
+			const uploadRegion = document.getElementById("upload-region");
+			const uploadRegionMessage = document.getElementById("upload-region-message");
+			const file = document.getElementById("file");
+
+			const urlParams = new URLSearchParams(window.location.search);
+			const queryToken = urlParams.get("t");
+
+			uploadRegion.addEventListener("dragenter", (ev) => {
+				if (ev.currentTarget.contains(ev.relatedTarget)) {
+					return;
+				}
+				if (!(ev.dataTransfer.items.length === 1 && ev.dataTransfer.items[0].type.startsWith("video/"))) {
+					return;
+				}
+				uploadRegion.classList.add("file-hover");
+			});
+
+			uploadRegion.addEventListener("dragleave", (ev) => {
+				if (ev.currentTarget.contains(ev.relatedTarget)) {
+					return;
+				}
+				uploadRegion.classList.remove("file-hover");
+			});
+
+			function watchProgress(id) {
+				const socket = new WebSocket(`wss://${location.host}/status_ws?t=${id}`);
+
+				let timeoutHandle = setTimeout(() => {
+					console.log("123");
+					uploadRegionMessage.innerText = "Connection timeout";
+					socket.close();
+				}, 2000);
+
+				socket.addEventListener("open", () => {
+					clearTimeout(timeoutHandle);
+					console.log("websocket open");
+				});
+
+				socket.addEventListener("message", (ev) => {
+					const {type, data} = JSON.parse(ev.data);
+					console.log("message", {type, data});
+
+					let message = null;
+
+					switch (type) {
+						case "inProgress":
+							if (data.progress === 0) {
+								message = `Analyzing...`;
+							} else {
+								message = `Progress: ${(data.progress * 100).toFixed(1)}%\nSpeed: ${data.speed}x`;
+							}
+							break;
+						case "completed":
+							message = `Completed!`;
+							window.location.assign("completed.html?t=" + queryToken);
+							break;
+						case "error":
+							message = `Error:<br><div>${data}</div>`;
+							break;
+						default:
+							message = "Unknown message: " + encodeURIComponent(ev.data);
+							break;
+					}
+
+					uploadRegionMessage.innerHTML = message;
+				});
+
+				socket.addEventListener("close", (ev) => {
+					console.log("websocket close", ev);
+				});
+
+				socket.addEventListener("error", (err) => {
+					console.log("websocket error", err);
+				});
+
+				return socket;
+			}
+
+			let currentSocket = null;
+
+			window.addEventListener("beforeunload", () => {
+				if (currentSocket) {
+					currentSocket.close();
+				}
+			});
+
+			window.addEventListener("load", async () => {
+				if (queryToken && !Number.isNaN(queryToken)) {
+					uploadRegionMessage.innerText = "Preparing...";
+					const status = await fetch("/status?t=" + queryToken, {
+						method: "HEAD",
+					})
+						.then((v) => v.status)
+						.catch(() => {
+							uploadRegionMessage.innerText = "Error!";
+						});
+					if (status == 404) {
+						uploadRegionMessage.innerText = "Video not found";
+					} else {
+						currentSocket = watchProgress(queryToken);
+					}
+				}
+			});
+
+			file.addEventListener("change", async (e) => {
+				// close if user is watching a processing already
+				if (currentSocket) {
+					currentSocket.close();
+				}
+
+				console.log(e.target, e.currentTarget, e.relatedTarget);
+				uploadRegion.classList.remove("file-hover");
+
+				const file = e.target.files[0];
+				const formData = new FormData();
+				formData.append("file", file);
+				formData.append("file2", file);
+
+				console.log("file", file);
+
+				uploadRegionMessage.innerHTML = "Uploading...";
+
+				let xhr = new XMLHttpRequest();
+				const [status, taskId] = await new Promise((r, f) => {
+					xhr.upload.addEventListener("progress", (ev) => {
+						if (ev.lengthComputable) {
+							console.log("progress", ev.loaded / ev.total);
+							uploadRegionMessage.innerHTML = `Uploading ${((ev.loaded / ev.total) * 100).toFixed(0)}%`;
+						}
+					});
+					xhr.addEventListener("loadend", (ev) => {
+						if (xhr.readyState === 4) {
+							console.log(xhr.status, xhr.response);
+							r([xhr.status, xhr.response]);
+						} else {
+							r([0, xhr.readyState]);
+						}
+					});
+					xhr.addEventListener("error", (e) => {
+						r([0, e.type]);
+					});
+					xhr.addEventListener("abort", (e) => {
+						r([0, e.type]);
+					});
+					xhr.open("POST", "/submit", true);
+					xhr.send(formData);
+				});
+
+				if (status == 202) {
+					uploadRegionMessage.innerHTML = "Done!";
+				} else if (status == 400) {
+					uploadRegionMessage.innerHTML = "Not a video file!";
+					return;
+				} else if (status == 404) {
+					uploadRegionMessage.innerHTML = "Not found";
+					return;
+				} else {
+					uploadRegionMessage.innerHTML = "Error: " + taskId;
+					return;
+				}
+
+				// this reloads the page
+				window.location.search = `t=${taskId}`;
+			});
+		</script>
+	</body>
+</html>
