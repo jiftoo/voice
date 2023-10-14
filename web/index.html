@@ -43,7 +43,7 @@
 			});
 
 			function watchProgress(id) {
-				const socket = new WebSocket(`ws://${location.host}/status_ws?t=${id}`);
+				const socket = new WebSocket(`wss://${location.host}/status_ws?t=${id}`);
 
 				let timeoutHandle = setTimeout(() => {
 					console.log("123");
