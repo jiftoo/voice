@@ -1,7 +1,4 @@
-use std::{
-	fmt::Display, io, ops::Range, path::PathBuf, process::Stdio, sync::Arc,
-	time::Duration,
-};
+use std::{fmt::Display, io, ops::Range, path::PathBuf, process::Stdio, sync::Arc, time::Duration};
 
 use tokio::{
 	io::{AsyncBufReadExt, AsyncWriteExt},
@@ -28,22 +25,18 @@ impl OutputParser {
 		match self {
 			OutputParser::Start => Ok((
 				OutputParser::End(
-					Self::parse_line(line, "start")?
-						.ok_or(io::Error::new(io::ErrorKind::InvalidData, line))?,
+					Self::parse_line(line, "start")?.ok_or(io::Error::new(io::ErrorKind::InvalidData, line))?,
 				),
 				None,
 			)),
 			OutputParser::End(start) => Ok((
 				OutputParser::Duration(
 					start,
-					Self::parse_line(line, "end")?
-						.ok_or(io::Error::new(io::ErrorKind::InvalidData, line))?,
+					Self::parse_line(line, "end")?.ok_or(io::Error::new(io::ErrorKind::InvalidData, line))?,
 				),
 				None,
 			)),
-			OutputParser::Duration(start, end) => {
-				Ok((OutputParser::Start, Some(start..end)))
-			}
+			OutputParser::Duration(start, end) => Ok((OutputParser::Start, Some(start..end))),
 		}
 	}
 
@@ -137,10 +130,8 @@ impl FFmpeg {
 			// coded in epic hurry
 			let str = "Duration: ";
 			let i = stderr_text.find(str).unwrap();
-			let split =
-				stderr_text.split_at(i + str.len()).1.split_once(',').unwrap().0.trim();
-			let split =
-				split.split(':').map(|x| x.parse::<f32>().unwrap()).collect::<Vec<_>>();
+			let split = stderr_text.split_at(i + str.len()).1.split_once(',').unwrap().0.trim();
+			let split = split.split(':').map(|x| x.parse::<f32>().unwrap()).collect::<Vec<_>>();
 			Duration::from_secs_f32(split[0] * 3600.0 + split[1] * 60.0 + split[2])
 		};
 
@@ -164,15 +155,9 @@ impl FFmpeg {
 		Ok(VideoAnalysis::new(ranges, video_duration))
 	}
 
-	pub async fn spawn_remove_silence(
-		&self,
-		keep_fragments: &[Range<f32>],
-	) -> io::Result<Child> {
+	pub async fn spawn_remove_silence(&self, keep_fragments: &[Range<f32>]) -> io::Result<Child> {
 		if keep_fragments.is_empty() {
-			return Err(io::Error::new(
-				io::ErrorKind::InvalidInput,
-				"no fragments to keep",
-			));
+			return Err(io::Error::new(io::ErrorKind::InvalidInput, "no fragments to keep"));
 		}
 		let filter = keep_fragments
 			.iter()
@@ -180,9 +165,7 @@ impl FFmpeg {
 			.reduce(|a, b| format!("{}+{}", a, b))
 			.unwrap();
 
-		let vf = format!(
-			"select='{filter}',setpts=N/FRAME_RATE/TB,scale='trunc(oh*a/2)*2:576'"
-		);
+		let vf = format!("select='{filter}',setpts=N/FRAME_RATE/TB,scale='trunc(oh*a/2)*2:576'");
 		let af = format!("aselect='{filter}',asetpts=N/SR/TB");
 
 		let filter_complex = format!("[0:v]{vf}[video];[0:a]{af}[audio]");

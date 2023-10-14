@@ -49,10 +49,7 @@ pub enum TaskStatus {
 	},
 }
 
-fn display_serialize<S: serde::Serializer, T: Display>(
-	x: &T,
-	s: S,
-) -> Result<S::Ok, S::Error> {
+fn display_serialize<S: serde::Serializer, T: Display>(x: &T, s: S) -> Result<S::Ok, S::Error> {
 	s.collect_str(x)
 }
 
@@ -118,7 +115,10 @@ impl Task {
 	) -> io::Result<Task> {
 		let output_file = outputs_dir.join(format!("{task_id}"));
 
-		let last_status = TaskStatus::InProgress { progress: 0.0, speed: 0.0 };
+		let last_status = TaskStatus::InProgress {
+			progress: 0.0,
+			speed: 0.0,
+		};
 		let task_update_tx = tokio::sync::broadcast::Sender::new(8);
 
 		let inner_task = Arc::new(RwLock::new(InnerTask {
@@ -129,14 +129,8 @@ impl Task {
 		let tokio_handle = tokio::task::spawn({
 			let inner_task = inner_task.clone();
 			async move {
-				let conversion_result = Self::run_conversion(
-					input_file,
-					output_file,
-					ffmpeg_executable,
-					inner_task.clone(),
-					task_id,
-				)
-				.await;
+				let conversion_result =
+					Self::run_conversion(input_file, output_file, ffmpeg_executable, inner_task.clone(), task_id).await;
 
 				// ignore send result
 				let final_status = match conversion_result {
@@ -147,12 +141,7 @@ impl Task {
 				};
 
 				tracing::debug!("sent last update: {final_status:?}");
-				Self::update_status(
-					&mut *inner_task.write().await,
-					task_id,
-					final_status,
-				)
-				.await;
+				Self::update_status(&mut *inner_task.write().await, task_id, final_status).await;
 			}
 		});
 
@@ -170,7 +159,9 @@ impl Task {
 		Self::update_status(
 			&mut this,
 			self.id,
-			TaskStatus::Completed { end_time: time::OffsetDateTime::now_utc() },
+			TaskStatus::Completed {
+				end_time: time::OffsetDateTime::now_utc(),
+			},
 		)
 		.await;
 	}
@@ -205,19 +196,14 @@ impl Task {
 	) -> Result<(), FFmpegError> {
 		tracing::debug!("begin task");
 
-		let ffmpeg = FFmpeg::new(
-			input_file.to_path_buf(),
-			output_file,
-			ffmpeg_executable.to_path_buf(),
-		);
+		let ffmpeg = FFmpeg::new(input_file.to_path_buf(), output_file, ffmpeg_executable.to_path_buf());
 
 		let analysis = try_else!(ffmpeg.analyze_silence().await, err, {
 			tracing::info!("analyze silence error: {:?}", err);
 			return Err(err);
 		});
 
-		let playtime_after_conversion_s =
-			analysis.audible.iter().map(|x| x.end - x.start).sum::<f32>();
+		let playtime_after_conversion_s = analysis.audible.iter().map(|x| x.end - x.start).sum::<f32>();
 
 		tracing::debug!(
 			"total playtime: {}s; playtime after conversion: {}s; playtime reduced by {}%",
@@ -226,11 +212,10 @@ impl Task {
 			(1.0 - playtime_after_conversion_s / analysis.duration.as_secs_f32()) * 100.0
 		);
 
-		let mut child =
-			try_else!(ffmpeg.spawn_remove_silence(&analysis.audible).await, err, {
-				tracing::info!("remove silence error: {:?}", err);
-				return Err(FFmpegError::IO(err.into()));
-			});
+		let mut child = try_else!(ffmpeg.spawn_remove_silence(&analysis.audible).await, err, {
+			tracing::info!("remove silence error: {:?}", err);
+			return Err(FFmpegError::IO(err.into()));
+		});
 
 		let stdout = child.stdout.take().unwrap();
 		let mut lines = BufReader::new(stdout).lines();
@@ -280,16 +265,17 @@ impl Task {
 			let mut inner_lock = inner.write().await;
 
 			// output_time_ms is the same as _us bug in ffmpeg
-			if let TaskStatus::InProgress { ref mut progress, ref mut speed } =
-				inner_lock.last_status
+			if let TaskStatus::InProgress {
+				ref mut progress,
+				ref mut speed,
+			} = inner_lock.last_status
 			{
 				match StatsParse::parse_line(&line) {
 					StatsParse::Speed(new_speed) => {
 						*speed = new_speed;
 					}
 					StatsParse::Time(new_time) => {
-						let new_progress =
-							new_time.as_secs_f32() / (playtime_after_conversion_s);
+						let new_progress = new_time.as_secs_f32() / (playtime_after_conversion_s);
 						*progress = new_progress.min(1.0); // may overflow a little somtimes
 					}
 					_ => {

@@ -1,8 +1,6 @@
 #![deny(unused_crate_dependencies)]
 
-use tracing_subscriber::{
-	filter::LevelFilter, prelude::__tracing_subscriber_SubscriberExt, EnvFilter, Layer,
-};
+use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, EnvFilter, Layer};
 
 mod avg;
 mod config;
@@ -28,12 +26,7 @@ async fn main() {
 	// TODO: check if the file is suitable before processing
 
 	// println until logger is set up
-	println!(
-		"{} v{} by {}",
-		env!("CARGO_PKG_NAME"),
-		env!("CARGO_PKG_VERSION"),
-		env!("CARGO_PKG_AUTHORS")
-	);
+	println!("{} v{} by {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), env!("CARGO_PKG_AUTHORS"));
 	println!(";D");
 
 	// initialize config
@@ -46,18 +39,12 @@ async fn main() {
 		println!("config: {:#?}", config_lock);
 
 		if !config_lock.encoder_found() {
-			println!(
-				"error: encoder not found. specified path: \"{}\"",
-				config_lock.ffmpeg_executable.display()
-			);
+			println!("error: encoder not found. specified path: \"{}\"", config_lock.ffmpeg_executable.display());
 			std::process::exit(1);
 		}
 
 		if !config_lock.web_dir_found() {
-			println!(
-				"error: web directory not found. specified path: \"{}\"",
-				config_lock.web_root.display()
-			);
+			println!("error: web directory not found. specified path: \"{}\"", config_lock.web_root.display());
 			std::process::exit(1);
 		}
 
@@ -69,49 +56,31 @@ async fn main() {
 			.with_writer(std::io::stdout)
 			.with_filter(
 				EnvFilter::from_default_env()
-					.add_directive(
-						LevelFilter::from_level(config_lock.log_level.into()).into(),
-					)
-					.add_directive("hyper::proto::h1::io=info".parse().unwrap())
-					.add_directive("hyper::proto::h1::conn=info".parse().unwrap())
-					.add_directive("hyper::proto::h1::decode=info".parse().unwrap())
-					.add_directive("hyper::proto::h1::encode=info".parse().unwrap())
-					.add_directive("hyper::proto::h1::role=info".parse().unwrap())
-					.add_directive("h2::codec::framed_read=info".parse().unwrap()),
+					.add_directive(format!("voice={:?}", config_lock.log_level).parse().unwrap())
+					.add_directive("h2=info".parse().unwrap())
+					.add_directive("hyper=info".parse().unwrap()),
 			);
 		let file_subscriber = tracing_subscriber::fmt::layer()
 			// .pretty()
-			.with_writer(tracing_appender::rolling::hourly(
-				&config_lock.log_file_root,
-				log_file_name,
-			))
+			.with_writer(tracing_appender::rolling::hourly(&config_lock.log_file_root, log_file_name))
 			.with_ansi(false)
 			.with_filter(
 				EnvFilter::from_default_env()
-					.add_directive(
-						LevelFilter::from_level(config_lock.log_level.into()).into(),
-					)
-					.add_directive("hyper::proto::h1::io=info".parse().unwrap())
-					.add_directive("hyper::proto::h1::conn=info".parse().unwrap())
-					.add_directive("hyper::proto::h1::decode=info".parse().unwrap())
-					.add_directive("hyper::proto::h1::encode=info".parse().unwrap())
-					.add_directive("hyper::proto::h1::role=info".parse().unwrap())
-					.add_directive("h2::codec::framed_read=info".parse().unwrap()),
+					.add_directive(format!("voice={:?}", config_lock.log_level).parse().unwrap())
+					.add_directive("h2=info".parse().unwrap())
+					.add_directive("hyper=info".parse().unwrap()),
 			);
 		tracing::subscriber::set_global_default(
-			tracing_subscriber::registry().with(stdout_subscriber).with(file_subscriber),
+			tracing_subscriber::registry()
+				.with(stdout_subscriber)
+				.with(file_subscriber),
 		)
 		.expect("failed to set global default subscriber");
 
-		tracing::info!(
-			"========================================================================="
-		);
+		tracing::info!("=========================================================================");
 		tracing::info!("Logging initialized");
 		tracing::info!("Log level: {:?}", config_lock.log_level);
-		tracing::info!(
-			"Writing to file: {}",
-			config_lock.log_file_root.join(log_file_name).display()
-		);
+		tracing::info!("Writing to file: {}", config_lock.log_file_root.join(log_file_name).display());
 	}
 
 	web::initialize_server().await;
