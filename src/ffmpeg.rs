@@ -1,9 +1,6 @@
 use std::{fmt::Display, io, ops::Range, path::PathBuf, process::Stdio, sync::Arc, time::Duration};
 
-use tokio::{
-	io::{AsyncBufReadExt, AsyncWriteExt},
-	process::{Child, Command},
-};
+use tokio::{process::{Child, Command}, io::AsyncWriteExt,};
 
 pub struct FFmpeg {
 	input: PathBuf,
@@ -12,7 +9,7 @@ pub struct FFmpeg {
 }
 
 const SILENCEDETECT_NOISE: &str = "-50dB";
-const SILENCEDETECT_DURATION: &str = "0.05";
+const SILENCEDETECT_DURATION: &str = "0.1";
 
 enum OutputParser {
 	Start,
