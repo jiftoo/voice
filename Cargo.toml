@@ -1,6 +1,6 @@
 [package]
 name = "voice"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2021"
 authors = ["Jiftoo <contact@jiftoo.dev>"]
 
@@ -27,3 +27,9 @@ opt-level = 1
 
 [profile.dev]
 opt-level = 0
+
+[profile.release]
+opt-level = 3
+lto = true
+debug = false
+strip = true

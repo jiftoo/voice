@@ -24,6 +24,7 @@ async fn main() {
 	// TODO: Implement re-encoding, since browsers don't like concatenated mp4.
 	// TODO: The rest of the frontend and API
 	// TODO: check if the file is suitable before processing
+	// TODO: upload files to bucket
 
 	// println until logger is set up
 	println!("{} v{} by {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), env!("CARGO_PKG_AUTHORS"));
