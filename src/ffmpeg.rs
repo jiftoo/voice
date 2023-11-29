@@ -14,7 +14,7 @@ pub struct FFmpeg {
 	exec: PathBuf,
 }
 
-const SILENCEDETECT_NOISE: &str = "-50dB";
+const SILENCEDETECT_NOISE: &str = "-40dB";
 const SILENCEDETECT_DURATION: &str = "0.1";
 
 enum OutputParser {
@@ -64,17 +64,30 @@ impl OutputParser {
 
 pub struct VideoAnalysis {
 	pub audible: Vec<Range<f32>>,
+	pub inaudible: Vec<Range<f32>>,
 	pub duration: Duration,
 }
 
 impl VideoAnalysis {
 	fn new(silence: Vec<Range<f32>>, duration: Duration) -> Self {
 		let mut audible = Vec::new();
-		silence.into_iter().fold(0.0, |prev, range| {
+
+		let head = 0.0..silence[0].start;
+		let tail = silence.last().unwrap().end..duration.as_secs_f32();
+
+		silence.iter().fold(0.0, |prev, range| {
 			audible.push(prev..range.start);
 			range.end
 		});
-		Self { audible, duration }
+
+		// insert period before first silence and after last silence
+		audible.insert(0, head);
+		audible.push(tail);
+
+		// filter 0 length periods
+		let audible = audible.into_iter().filter(|x| x.start != x.end).collect();
+
+		Self { audible, inaudible: silence, duration }
 	}
 }
 
@@ -155,6 +168,10 @@ impl FFmpeg {
 			}
 		}
 
+		if ranges.is_empty() {
+			return Err(FFmpegError::FFmpeg("Video does not contain silence".into()));
+		}
+
 		// sometimes the silencedetect doesn't output silence_end
 		// if close to end of video
 		if let OutputParser::End(start) = parser_state {
@@ -166,27 +183,26 @@ impl FFmpeg {
 
 	pub async fn spawn_remove_silence(
 		&self,
-		keep_fragments: &[Range<f32>],
+		analysys: &VideoAnalysis,
 	) -> io::Result<Child> {
+		let keep_fragments = &analysys.audible;
+
 		if keep_fragments.is_empty() {
 			return Err(io::Error::new(
 				io::ErrorKind::InvalidInput,
 				"no fragments to keep",
 			));
 		}
+
 		let filter = keep_fragments
 			.iter()
 			.map(|x| format!("between(t\\,{}\\,{})", x.start, x.end))
 			.reduce(|a, b| format!("{}+{}", a, b))
 			.unwrap();
 
-		let remove_fragments = keep_fragments
-			.windows(2)
-			.map(|ab| ab[0].end..ab[1].start)
-			.collect::<Vec<_>>();
-
-		let pts_shifts = remove_fragments
-			.into_iter()
+		let pts_shifts = analysys
+			.inaudible
+			.iter()
 			.map(|x| format!("gt(T,{})*({})", x.start, x.end - x.start))
 			.reduce(|a, b| format!("{}+{}", a, b))
 			.unwrap();

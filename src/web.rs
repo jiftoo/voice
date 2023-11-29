@@ -62,7 +62,7 @@ impl TaskManager {
 			task_id,
 			&config_lock.outputs_dir,
 			config_lock.ffmpeg_executable.clone(),
-		)?;
+		);
 
 		self.tasks.write().await.insert(task_id, task);
 
@@ -169,10 +169,15 @@ pub async fn initialize_server() {
 	let addr = SocketAddr::from(([0, 0, 0, 0], config_lock.port));
 	tracing::info!("Using tls");
 	tracing::debug!("Started server on {}", addr);
-	axum_server::bind_rustls(addr, tls_config)
-		.serve(router.into_make_service())
-		.await
-		.unwrap();
+
+	if cfg!(debug_assertions) {
+		axum_server::bind(addr).serve(router.into_make_service()).await.unwrap();
+	} else {
+		axum_server::bind_rustls(addr, tls_config)
+			.serve(router.into_make_service())
+			.await
+			.unwrap();
+	}
 }
 
 async fn meta_header_middleware<B>(request: Request<B>, next: Next<B>) -> Response {
@@ -196,6 +201,15 @@ impl<T: IntoResponse> IntoResponse for EndpointResult<T> {
 			Self::Ok(t) => t.into_response(),
 			Self::Accepted(r) => (StatusCode::ACCEPTED, r).into_response(),
 			Self::Err(code, msg) => (code, msg.unwrap_or_default()).into_response(),
+		}
+	}
+}
+
+async fn drain_multipart(mut multipart: Multipart) {
+	while let Some(mut field) = multipart.next_field().await.ok().flatten() {
+		while let Some(x) = field.chunk().await.ok().flatten() {
+			// tracing::debug!("drained {} bytes", x.len());
+			drop(x);
 		}
 	}
 }
@@ -244,8 +258,12 @@ async fn submit(
 			};
 
 			let task_id = match state.task_manager.new_task(input_data).await {
-				Ok(task_id) => task_id,
+				Ok(task_id) => {
+					drain_multipart(multipart).await;
+					task_id
+				}
 				Err(err) => {
+					drain_multipart(multipart).await;
 					let err_string = err.to_string();
 					tracing::error!("Failed to start task: {}", err_string);
 					return EndpointResult::Err(
