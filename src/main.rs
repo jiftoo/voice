@@ -7,6 +7,7 @@ mod config;
 mod ffmpeg;
 mod task;
 mod web;
+mod template;
 
 #[tokio::main]
 async fn main() {

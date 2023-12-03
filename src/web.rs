@@ -31,7 +31,7 @@ use tower_http::services::ServeDir;
 
 use crate::config::CONFIG;
 use crate::task::{Task, TaskId, TaskStatus, TaskUpdateMessage};
-use crate::{config, task};
+use crate::{config, task, template};
 
 struct TaskManager {
 	tasks: Arc<RwLock<HashMap<TaskId, task::Task>>>,
@@ -135,6 +135,9 @@ fn spawn_task_cleaner(task_manager: Arc<TaskManager>) {
 }
 
 pub async fn initialize_server() {
+	//! https://www.googleapis.com/drive/v3/files?q=mimeType+contains+'video'&fields=files(md5Checksum,originalFilename,mimeType)
+	// ffmpeg -re -i prim.mp4 -c copy -f hls -hls_time 1 -hls_list_size 10 -hls_flags delete_segments live.m3u8
+
 	let app_state: AppState = AppState { task_manager: Arc::new(TaskManager::new()) };
 
 	spawn_task_cleaner(app_state.task_manager.clone());
@@ -144,8 +147,8 @@ pub async fn initialize_server() {
 		.route("/status", get(status))
 		.route("/status_ws", get(status_ws))
 		.route("/videos/:video", get(videos))
-		.fallback_service(ServeDir::new(CONFIG.read().await.web_root.clone()))
 		.with_state(app_state)
+		.nest("/", template::routes())
 		.layer(middleware::from_fn(meta_header_middleware))
 		.layer(DefaultBodyLimit::max(config::CONFIG.read().await.max_file_size as usize))
 		.layer(
