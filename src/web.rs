@@ -149,6 +149,7 @@ pub async fn initialize_server() {
 		.route("/videos/:video", get(videos))
 		.with_state(app_state)
 		.nest("/", template::routes())
+		.route_service("/static", ServeDir::new(CONFIG.read().await.web_root.clone()))
 		.layer(middleware::from_fn(meta_header_middleware))
 		.layer(DefaultBodyLimit::max(config::CONFIG.read().await.max_file_size as usize))
 		.layer(
