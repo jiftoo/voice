@@ -1,5 +1,15 @@
+@font-face {
+	font-family: "Monocraft";
+	src: url("./Monocraft.ttf");
+}
+
+@font-face {
+	font-family: "Minecraft";
+	src: url("./Minecraft.otf");
+}
+
 html.light {
-	color: dark;
+	color: black;
 }
 
 html.dark {
@@ -13,6 +23,8 @@ html.dark {
 }
 
 body {
+	font-family: "Minecraft", sans-serif;
+
 	background-color: var(--background);
 	margin: 0;
 	font-size: 16px;
@@ -40,8 +52,11 @@ main {
 #list-wrapper {
 	background-color: var(--background-accent);
 	height: 100%;
+	overflow: hidden;
 	padding: 24px;
 	padding-top: 0;
+	display: flex;
+	flex-direction: column;
 }
 
 #list-wrapper > *:nth-child(2) {
@@ -147,7 +162,10 @@ main ul li#new-file {
 #tool {
 	flex-grow: 1;
 	display: grid;
-	grid-template-areas: "video log" "controls controls";
+	grid-template-areas:
+		"status log"
+		"video log"
+		"controls controls";
 	grid-template-columns: 2fr 1fr;
 }
 
@@ -156,13 +174,20 @@ main ul li#new-file {
 	grid-template-columns: 1fr 1fr;
 }
 
+#status,
 #video,
 #log,
 #controld {
 	padding: 1em;
 }
 
+#status {
+	grid-area: status;
+	background-color: violet;
+}
+
 #video {
+	grid-area: video;
 	background-color: red;
 }
 
@@ -176,6 +201,8 @@ main ul li#new-file {
 }
 
 #log {
+	grid-area: log;
+
 	background-color: darkcyan;
 	display: flex;
 	flex-direction: column;
@@ -190,7 +217,7 @@ main ul li#new-file {
 	flex-grow: 1;
 
 	border-radius: 4px;
-	
+
 	background-color: var(--background);
 	flex-direction: column;
 
@@ -205,23 +232,23 @@ main ul li#new-file {
 	content: "";
 	display: inline-block;
 	margin-right: 1ch;
-	width:  8px;
+	width: 8px;
 	height: 8px;
 	transform: translateY(-1px);
 	border-radius: 50%;
 	background-color: var(--bulb-color);
 }
 
-#log-data > *.warn  {
+#log-data > *.warn {
 	--bulb-color: orange;
 }
 
-#log-data > *.error  {
+#log-data > *.error {
 	--bulb-color: red;
 	color: red;
 }
 
-#log-data > *.warn  {
+#log-data > *.warn {
 	--bulb-color: orange;
 }
 
