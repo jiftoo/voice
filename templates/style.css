@@ -66,6 +66,7 @@ main {
 
 main ul {
 	padding: 0;
+	padding-right: 1ch;
 	display: flex;
 	flex-direction: column;
 	gap: 4px;
@@ -120,25 +121,19 @@ main ul li#new-file {
 	margin-bottom: 4px;
 }
 
-#tool-wrapper.empty {
+#tool.empty {
 	background-color: var(--background);
 	display: flex;
 	justify-content: center;
 	align-items: center;
 }
 
-#tool-wrapper.empty::after {
+#tool.empty::after {
 	content: "Select an existing video or create a new one!";
 }
 
-#tool-wrapper {
-	background-color: var(--background-accent);
-	padding: 1em;
-	display: flex;
-	flex-direction: column;
-}
-
-#tool-wrapper > header {
+#tool > header {
+	grid-area: header;
 	display: flex;
 	flex-direction: row;
 	justify-content: space-between;
@@ -147,11 +142,11 @@ main ul li#new-file {
 	border-bottom: 1px solid var(--background);
 }
 
-#tool-wrapper > header > h1 {
+#tool > header > h1 {
 	margin: 0;
 }
 
-#tool-wrapper > header button {
+#tool > header button {
 	appearance: none;
 	background-color: red;
 	color: white;
@@ -160,13 +155,16 @@ main ul li#new-file {
 }
 
 #tool {
-	flex-grow: 1;
+	height: 100vh;
 	display: grid;
 	grid-template-areas:
+		"header header"
 		"status log"
 		"video log"
 		"controls controls";
-	grid-template-columns: 2fr 1fr;
+	grid-template-columns: 4fr 4fr;
+	grid-template-rows: min-content 1fr 1fr minmax(0, 1fr);
+	overflow: hidden;
 }
 
 #tool > #video-log-wrapper {
@@ -177,7 +175,7 @@ main ul li#new-file {
 #status,
 #video,
 #log,
-#controld {
+#controls {
 	padding: 1em;
 }
 
@@ -187,17 +185,22 @@ main ul li#new-file {
 }
 
 #video {
+	display: flex;
+	flex-direction: column;
 	grid-area: video;
 	background-color: red;
 }
 
-#video > h5 {
-	/* padding-left: 1em; */
+#video:empty::after {
+	content: "No video selected";
+	display: flex;
+	justify-content: center;
+	align-items: center;
 }
 
 #video > video {
-	width: 100%;
 	aspect-ratio: 16/9;
+	width: 100%;
 }
 
 #log {
@@ -226,6 +229,8 @@ main ul li#new-file {
 }
 
 #log-data > * {
+	white-space: pre-wrap;
+	tab-size: 4px;
 }
 
 #log-data > *::before {
@@ -234,6 +239,7 @@ main ul li#new-file {
 	margin-right: 1ch;
 	width: 8px;
 	height: 8px;
+	line-height: 0;
 	transform: translateY(-1px);
 	border-radius: 50%;
 	background-color: var(--bulb-color);
