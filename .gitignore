@@ -17,3 +17,6 @@ keys
 ./in.webm
 certificates
 WinTime64.exe
+
+/voice-web/target
+/voice-web/expanded.rs

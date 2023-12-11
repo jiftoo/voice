@@ -254,10 +254,6 @@ main ul li#new-file {
 	color: red;
 }
 
-#log-data > *.warn {
-	--bulb-color: orange;
-}
-
 #controls {
 	background-color: lime;
 	/* grid-column: 1 / span 2; */
