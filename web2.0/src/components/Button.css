@@ -11,6 +11,7 @@
 	filter: contrast(1.1) brightness(1.1);
 }
 
+
 .custom-button.normal {
 	color: var(--primary);
 	background-color: var(--secondary);
