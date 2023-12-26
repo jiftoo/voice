@@ -1,0 +1,27 @@
+nav {
+	/* background-color: #666; */
+	background-color: var(--secondary-dark);
+	padding: 12px;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	font-family: "Minecraft";
+}
+
+#logo {
+	height: 100%;
+	font-size: 48px;
+	user-select: none;
+	background: linear-gradient(90deg, var(--primary) 33%, var(--accent));
+	background-clip: text;
+	-webkit-text-fill-color: transparent;
+
+	cursor: pointer;
+}
+
+#logo:hover {
+	transition: background ease 0.5s;
+	background: linear-gradient(90deg, var(--primary) 10%, var(--accent));
+	background-clip: text;
+	-webkit-text-fill-color: transparent;
+}

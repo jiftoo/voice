@@ -1,0 +1,72 @@
+@font-face {
+	font-family: "Minecraft";
+	src: url("Minecraft.otf");
+}
+
+@font-face {
+	font-family: "Minecraft-Bold";
+	src: url("Minecraft-Bold.otf");
+	font-weight: bold;
+}
+
+/* :root {
+	--primary: #eee;
+	--accent: #ffc008;
+} */
+:root {
+	--primary: #eee;
+	--muted: #aaa;
+	--accent: #ffc008;
+	--accent-dark: #ba8d05;
+	--secondary: #7e7b7a;
+	--secondary-dark: #4e4d4c;
+	--muted-dark: #808386;
+	/* --danger: #dc3545; */
+	--danger: #de606c;
+	--warning: #ffc107;
+
+	/* for use with pseudo elements */
+	--rounded-border-radius: 15px;
+}
+
+main {
+	width: calc(min(100%, 800px));
+	display: flex;
+	flex-direction: column;
+	gap: 4em;
+	margin-top: 1em;
+}
+
+body {
+	display: flex;
+	justify-content: center;
+	background-color: #111;
+	color: #eee;
+}
+
+* {
+	font-family: "Minecraft", sans-serif;
+	box-sizing: border-box;
+}
+
+/* default firefox h5 style. here for consistency */
+h5 {
+	display: block;
+	font-size: 0.83em;
+	font-weight: bold;
+	margin-block-start: 1.67em;
+	margin-block-end: 1.67em;
+}
+/* global class names */
+
+.rounded {
+	border-radius: var(--rounded-border-radius);
+}
+
+.disabled {
+	filter: brightness(0.7) contrast(0.7);
+	cursor: not-allowed;
+}
+.disabled * {
+	cursor: not-allowed;
+}

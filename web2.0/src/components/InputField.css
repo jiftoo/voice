@@ -1,0 +1,21 @@
+.input-field {
+	font-family: "Minecraft", sans-serif;
+	color: var(--primary);
+	background-color: var(--secondary);
+	border: none;
+	padding: 0.8em;
+	border-radius: var(--rounded-border-radius);
+	transition: filter 0.2s ease;
+	font-size: inherit;
+	width: 275px;
+}
+
+.input-field:focus {
+	outline: none;
+	filter: brightness(1.1);
+}
+
+.input-field:disabled {
+	filter: brightness(0.7) contrast(0.7);
+	cursor: not-allowed;
+}

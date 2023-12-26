@@ -1,0 +1,42 @@
+.file-selector {
+	background-color: var(--secondary-dark);
+	color: var(--primary);
+	border-radius: 16px;
+}
+
+.file-selector input[type="file"] {
+	width: 100%;
+	font-size: inherit;
+	color: var(--primary);
+	background-color: transparent;
+	border: none;
+	cursor: pointer;
+}
+
+.file-selector input[type="file"]::file-selector-button {
+	margin-right: 1ch;
+	font-family: "Minecraft", sans-serif;
+	color: var(--primary);
+	background-color: var(--secondary);
+	border: none;
+	padding: 0.8em;
+	border-radius: var(--rounded-border-radius);
+	transition: filter 0.2s ease;
+}
+.file-selector input[type="file"]::file-selector-button:hover {
+	filter: brightness(1.1) contrast(1.1);
+}
+
+.file-selector.disabled {
+	filter: brightness(0.5) contrast(0.5);
+	background-color: transparent;
+	cursor: not-allowed;
+}
+
+.file-selector.disabled input[type="file"] {
+	cursor: not-allowed;
+}
+
+.file-selector.disabled input[type="file"]::file-selector-button:hover {
+	filter: unset;
+}

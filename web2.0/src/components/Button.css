@@ -1,0 +1,28 @@
+.custom-button {
+	font-size: inherit;
+	border: none;
+	padding: 0.8em;
+	border-radius: var(--rounded-border-radius);
+	cursor: pointer;
+	transition: background-color 0.3s ease;
+}
+
+.custom-button:not(.disabled):hover {
+	filter: contrast(1.1) brightness(1.1);
+}
+
+.custom-button.normal {
+	color: var(--primary);
+	background-color: var(--secondary);
+}
+
+.custom-button.accent {
+	/* color: var(--secondary-dark); */
+	color: #111;
+	background-color: var(--accent);
+}
+
+.custom-button.danger {
+	color: var(--primary);
+	background-color: var(--danger);
+}
