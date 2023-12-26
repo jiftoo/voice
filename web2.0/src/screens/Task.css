@@ -1,0 +1,32 @@
+#task-id-code {
+	box-sizing: border-box;
+	padding: 0.5em;
+	background-color: var(--dark);
+	display: inline-flex;
+	align-items: center;
+	flex-direction: row;
+	gap: 8px;
+	cursor: pointer;
+}
+
+#task-id-code > img {
+	filter: invert();
+	width: 16px;
+	height: auto;
+}
+
+#task-id-code.clicked {
+	animation: task-id-code-active 0.15s ease-in-out;
+}
+
+@keyframes task-id-code-active {
+	0% {
+		transform: scale(1);
+	}
+	50% {
+		transform: scale(0.95);
+	}
+	100% {
+		transform: scale(1);
+	}
+}
