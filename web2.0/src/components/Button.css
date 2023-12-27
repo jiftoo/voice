@@ -7,14 +7,24 @@
 	transition: background-color 0.3s ease;
 }
 
-.custom-button:not(.disabled):hover {
-	filter: contrast(1.1) brightness(1.1);
+.custom-button.small {
+	font-size: 0.9em;
+	padding: 4px;
+	padding-left: 6px;
+	padding-right: 6px;
 }
 
+/* .custom-button:not(.disabled):hover {
+	filter: contrast(1.1) brightness(1.2);
+} */
 
 .custom-button.normal {
 	color: var(--primary);
 	background-color: var(--secondary);
+}
+.custom-button.normal:not(.disabled):hover {
+	color: var(--primary);
+	background-color: var(--secondary-highlight);
 }
 
 .custom-button.accent {
@@ -22,8 +32,16 @@
 	color: #111;
 	background-color: var(--accent);
 }
+.custom-button.accent:not(.disabled):hover {
+	color: #111;
+	background-color: var(--accent-highlight);
+}
 
 .custom-button.danger {
 	color: var(--primary);
 	background-color: var(--danger);
+}
+.custom-button.danger:not(.disabled):hover {
+	color: var(--primary);
+	background-color: var(--danger-highlight);
 }

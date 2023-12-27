@@ -20,18 +20,27 @@ app.post("/check-upload-url", (req, res) => {
 	return res.sendStatus(200);
 });
 
-app.get("/max-file-size", (req, res) => {
+app.get("/constants", (req, res) => {
 	const premium = req.query.premium === "true" ?? false;
 	console.log("file size", premium);
 	res.header("Access-Control-Allow-Origin", "*");
 	res.header("Cache-Control", "no-cache");
+	let maxFileSize;
+	let skipDuration;
 	if (premium) {
 		// 100 MiB
-		return res.send("104857600");
+		maxFileSize = 104857600;
+		skipDuration = {min: 50, max: 500};
 	} else {
 		// 25 MiB
-		return res.send("26214400");
+		maxFileSize = 26214400;
+		skipDuration = {min: 100, max: 250};
 	}
+	return res.send({
+		silenceCutoff: {min: -90, max: -10},
+		skipDuration,
+		maxFileSize
+	});
 });
 
 app.options("/new-task/use-file", (req, res) => {

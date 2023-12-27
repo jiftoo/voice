@@ -227,6 +227,7 @@ impl Task {
 			);
 
 		tracing::debug!("Keeping: {:?}", analysis.audible);
+		tracing::debug!("Skipping: {:?}", analysis.inaudible);
 
 		let mut child = try_else!(ffmpeg.spawn_remove_silence(&analysis).await, err, {
 			tracing::info!("remove silence error: {:?}", err);

@@ -1,0 +1,120 @@
+.video-player {
+	display: flex;
+	flex-direction: column;
+
+	background-color: var(--secondary);
+
+	--wrapper-border-width: 4px;
+	border: solid var(--secondary);
+	border-width: var(--wrapper-border-width);
+
+	padding-bottom: 3px;
+}
+
+.video-player > *:not(video) {
+	margin: 6px;
+}
+
+.video-player video {
+	width: 100%;
+	height: 100%;
+	display: block;
+
+	border-radius: calc(var(--rounded-border-radius) - var(--wrapper-border-width));
+}
+
+.video-controls {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 8px;
+
+	border-radius: calc(var(--rounded-border-radius) - var(--wrapper-border-width));
+	border-top-left-radius: 0;
+	border-top-right-radius: 0;
+}
+
+.video-controls button {
+	padding: 0.4em 0.5em;
+}
+
+.video-player .seekbar {
+	height: var(--seekbar-height);
+	appearance: none;
+	accent-color: red;
+	/* background: <set inline> */
+
+	margin-top: 12px;
+	/* doesn't align with background */
+	/* padding-left: 4px; */
+	/* padding-right: 4px; */
+
+	box-sizing: content-box;
+
+	transition: height ease-in-out 0.1s;
+
+	--non-hover-thumb-width: 5px;
+	--hover-thumb-width: 14px;
+	--seekbar-height: 16px;
+	--seekbar-height-hover: 24px;
+
+	--skip-segment-color: var(--secondary-dark);
+	--non-skip-segment-color: var(--accent);
+}
+
+.video-player .seekbar:hover {
+	transition-delay: 75ms;
+	height: var(--seekbar-height-hover);
+}
+
+.video-player .seekbar:hover::-moz-range-thumb {
+	transition-delay: 75ms;
+	width: var(--hover-thumb-width);
+}
+.video-player .seekbar:hover::-webkit-slider-thumb {
+	transition-delay: 75ms;
+	width: var(--hover-thumb-width);
+	height: var(--seekbar-height-hover);
+}
+
+.video-player .seekbar::-moz-range-thumb {
+	transition:
+		transform ease-in-out,
+		width ease-in-out;
+	transition-duration: 0.1s;
+	/* 1 px top bottom margin */
+	height: 100%;
+	width: var(--non-hover-thumb-width);
+	appearance: none;
+	box-sizing: border-box;
+	background-color: var(--white);
+	filter: drop-shadow(0 0 1px var(--secondary));
+	border: none;
+	/* border-radius: var(--rounded-border-radius); */
+	border-radius: 0;
+	cursor: pointer;
+}
+/* chrome doesn't parse for some reason this if I do a comma selector */
+.video-player .seekbar::-webkit-slider-thumb {
+	transition:
+		transform ease-in-out,
+		width ease-in-out,
+		height ease-in-out;
+	transition-duration: 0.1s;
+	/* 1 px top bottom margin */
+	/* height: calc(var(--seekbar-height) - 2px); */
+	height: var(--seekbar-height);
+	width: var(--non-hover-thumb-width);
+	appearance: none;
+	box-sizing: border-box;
+	background-color: var(--white);
+	filter: drop-shadow(0 0 1px var(--secondary));
+	border: none;
+	/* border-radius: var(--rounded-border-radius); */
+	border-radius: 0;
+	cursor: pointer;
+}
+
+.smaller-gap-hack > label.range-slider {
+	gap: 0.5ch;
+}

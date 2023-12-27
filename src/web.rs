@@ -31,7 +31,7 @@ use tower_http::services::ServeDir;
 
 use crate::config::CONFIG;
 use crate::task::{Task, TaskId, TaskStatus, TaskUpdateMessage};
-use crate::{config, task, template};
+use crate::{config, task};
 
 struct TaskManager {
 	tasks: Arc<RwLock<HashMap<TaskId, task::Task>>>,
@@ -148,7 +148,7 @@ pub async fn initialize_server() {
 		.route("/status_ws", get(status_ws))
 		.route("/videos/:video", get(videos))
 		.with_state(app_state)
-		.nest("/", template::routes())
+		.fallback_service(ServeDir::new(CONFIG.read().await.web_root.clone()))
 		.route_service("/static", ServeDir::new(CONFIG.read().await.web_root.clone()))
 		.layer(middleware::from_fn(meta_header_middleware))
 		.layer(DefaultBodyLimit::max(config::CONFIG.read().await.max_file_size as usize))

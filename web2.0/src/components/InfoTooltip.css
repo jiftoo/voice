@@ -1,0 +1,39 @@
+.info-tooltip-container {
+	line-height: 0;
+	position: relative;
+}
+
+.info-tooltip-popup {
+	position: fixed;
+	max-width: 25ch;
+	padding: 1em;
+	line-height: 1em;
+
+	transform: translate(-10%, -150%);
+	z-index: 999;
+
+	filter: drop-shadow(0 0 4px var(--dark));
+	
+	background-color: var(--secondary);
+
+	visibility: hidden;
+	opacity: 0;
+	transition: opacity 0.1s ease;
+}
+
+.info-tooltip-icon {
+	filter: invert();
+	width: 1.2em;
+	height: 1.2em;
+	display: inline-block;
+}
+
+.info-tooltip-icon > img {
+	width: 100%;
+	aspect-ratio: 1;
+}
+
+.info-tooltip-icon:hover + .info-tooltip-popup {
+	visibility: visible;
+	opacity: 1;
+}

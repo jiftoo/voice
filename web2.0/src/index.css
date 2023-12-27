@@ -1,11 +1,11 @@
 @font-face {
 	font-family: "Minecraft";
-	src: url("Minecraft.otf");
+	src: url("/Minecraft.otf");
 }
 
 @font-face {
 	font-family: "Minecraft-Bold";
-	src: url("Minecraft-Bold.otf");
+	src: url("/Minecraft-Bold.otf");
 	font-weight: bold;
 }
 
@@ -14,6 +14,7 @@
 	--accent: #ffc008;
 } */
 :root {
+	--white: white;
 	--primary: #eee;
 	--muted: #aaa;
 	--accent: #ffc008;
@@ -26,12 +27,16 @@
 	--danger: #de606c;
 	--warning: #ffc107;
 
+	--accent-highlight: #ffdf0d;
+	--secondary-highlight: #918d8c;
+	--secondary-dark-highlight: #5a5957;
+
 	/* for use with pseudo elements */
 	--rounded-border-radius: 15px;
 }
 
 main {
-	width: calc(min(100%, 800px));
+	width: calc(min(100%, 835px));
 	display: flex;
 	flex-direction: column;
 	gap: 4em;
@@ -65,8 +70,8 @@ h5 {
 }
 
 .disabled {
-	filter: brightness(0.65) contrast(0.7) saturate(0.1) !important;
-	opacity: 0.7 !important;
+	filter: brightness(0.65) contrast(0.7) saturate(0.1);
+	opacity: 0.7;
 
 	cursor: not-allowed !important;
 }

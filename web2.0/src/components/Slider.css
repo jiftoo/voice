@@ -1,0 +1,66 @@
+.range-slider {
+	height: 18px;
+	display: flex;
+	align-items: center;
+	gap: 1ch;
+}
+
+.range-slider.fillSpace {
+	width: 100%;
+	justify-content: space-between;
+}
+
+.range-slider > span {
+	line-height: 0;
+}
+
+.range-slider > span > * {
+	line-height: 0;
+}
+
+.range-slider > input {
+	appearance: none;
+	background-color: var(--secondary-dark);
+	outline: none;
+	transition: background-color 0.1s;
+	padding-left: 2px;
+	padding-right: 2px;
+	margin: 0;
+}
+
+.range-slider.lighter > input {
+	background-color: var(--secondary);
+}
+
+.range-slider > input::-moz-range-thumb {
+	appearance: none;
+	border: none;
+	background-color: var(--accent);
+}
+
+.range-slider > input::-webkit-slider-thumb {
+	background-color: var(--accent);
+	appearance: none;
+	height: 13px;
+	width: 13px;
+	border-radius: 50%;
+	margin-top: 2px;
+	margin-bottom: 2px;
+}
+
+.range-slider > input:hover {
+	background-color: var(--secondary-dark-highlight);
+}
+
+.range-slider.lighter > input:hover {
+	background-color: var(--secondary-highlight);
+}
+
+.range-slider.disabled.hideKnob > input::-moz-range-thumb {
+	display: none;
+	visibility: hidden;
+}
+.range-slider.disabled.hideKnob > input::-webkit-slider-thumb {
+	display: none;
+	visibility: hidden;
+}

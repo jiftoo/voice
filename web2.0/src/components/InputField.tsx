@@ -11,7 +11,7 @@ export default function InputField(props: InputFieldProps) {
 			placeholder={props.placeholder}
 			type={props.type}
 			value={props.signal[0]()}
-			onInput={(ev) => props.signal[1](ev.target.value)}
+			onInput={ev => props.signal[1](ev.target.value)}
 		/>
 	);
 }

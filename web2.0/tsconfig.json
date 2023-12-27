@@ -10,8 +10,11 @@
 		"jsxImportSource": "solid-js",
 		"types": ["vite/client"],
 		"noEmit": true,
-		"isolatedModules": true
+		"isolatedModules": true,
+		"resolveJsonModule": true
 	},
+	"skipLibCheck": true,
 	"include": ["src"],
+	"exclude": ["node_modules", "dist", "typings/browser", "typings/browser.d.ts"],
 	"references": [{"path": "./tsconfig.node.json"}]
 }

@@ -8,6 +8,36 @@
 	width: 275px;
 }
 
+#upload-container {
+	display: grid;
+	grid-template-columns: 4fr 5fr;
+	gap: 1em;
+}
+
+#submit-options {
+	display: flex;
+	flex-direction: column;
+}
+#submit-options > h5:first-child {
+	grid-column: 1 / span 2;
+}
+#submit-options > *:not(:first-child) {
+	margin-bottom: 16px;
+}
+
+#submit-options fieldset {
+	border: 1px solid var(--accent);
+	display: flex;
+	flex-direction: column;
+	padding: 16px;
+	padding-top: 9px;
+	gap: 16px;
+}
+#submit-options fieldset legend {
+	color: var(--accent);
+	margin-left: auto;
+}
+
 #video-from-url-error {
 	color: var(--danger);
 }

@@ -1,5 +1,4 @@
 import "./App.css";
-import "./Main.css";
 import Navbar from "./Navbar";
 import {useLocation, RouteSectionProps} from "@solidjs/router";
 

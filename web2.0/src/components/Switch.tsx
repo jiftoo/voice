@@ -1,27 +1,37 @@
-import {Signal} from "solid-js";
+import {JSX, Signal} from "solid-js";
 import "./Switch.css";
 
-export default function Switch(props: {signal: Signal<boolean>; label?: string; disabled?: boolean}) {
+export default function Switch(props: {
+	value: boolean;
+	onChange: (value: boolean) => void;
+	children?: JSX.Element;
+	disabled?: boolean;
+	small?: boolean;
+	reverse?: boolean;
+}) {
 	let disabled = () => props.disabled ?? false;
 	return (
-		<div class="switch-container" classList={{disabled: props.disabled}}>
-			{props.label && (
+		<div
+			class="switch-container"
+			classList={{disabled: props.disabled, small: props.small, reverse: props.reverse}}
+		>
+			{props.children && (
 				<label>
-					{props.label}
-					<SwitchElement signal={props.signal} disabled={disabled()} />
+					<SwitchElement value={props.value} onChange={props.onChange} disabled={disabled()} />
+					{props.children}
 				</label>
 			)}
-			{!props.label && <SwitchElement signal={props.signal} disabled={disabled()} />}
+			{!props.children && <SwitchElement value={props.value} onChange={props.onChange} disabled={disabled()} />}
 		</div>
 	);
 }
-function SwitchElement(props: {signal: Signal<boolean>; disabled: boolean}) {
+function SwitchElement(props: {value: boolean; onChange: (value: boolean) => void; disabled: boolean}) {
 	let inputRef: HTMLInputElement | undefined;
 	return (
 		<label
 			class="switch"
 			tabIndex={0}
-			onKeyDown={(ev) => {
+			onKeyDown={ev => {
 				if (ev.key == "Enter" || ev.key == " ") {
 					inputRef?.click();
 				}
@@ -32,11 +42,8 @@ function SwitchElement(props: {signal: Signal<boolean>; disabled: boolean}) {
 				tabIndex={-1}
 				ref={inputRef}
 				disabled={props.disabled}
-				checked={props.signal[0]()}
-				onInput={(e) => {
-					console.log("input", e.currentTarget.checked, props.signal[1]);
-					props.signal[1](e.currentTarget.checked);
-				}}
+				checked={props.value}
+				onInput={ev => props.onChange(ev.currentTarget.checked)}
 			/>
 			<span class="slider rounded" />
 		</label>
