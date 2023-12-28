@@ -264,40 +264,50 @@ function RegularOptions<
 	const [signal, setSignal] = props.signal;
 
 	const constants = () => props.constants;
-	const silenceCutoffFmt = () => (constants() ? signal().silenceCutoff.toFixed(1) : "...") + "dB";
+	const silenceCutoffFmt = () => (constants() ? signal().silenceCutoff.toFixed(0) : "...") + "dB";
 	const minSkipDurationFmt = () => (constants() ? signal().minSkipDuration : "...") + "ms";
 
 	return (
 		<>
-			<Slider
-				disabled={props.constants === null}
-				// hideKnobOnDisabled
-				lighter
-				fillSpace
-				// this value is put in the silenceremove ffmpeg filter
-				// the more negative it is, the quieter the silence has to be to be removed
-				// backend returns the more negative bound as min
-				min={constants()?.silenceCutoff.min ?? -1}
-				max={constants()?.silenceCutoff.max ?? 1}
-				step={0.01}
-				value={constants() ? signal().silenceCutoff : 0}
-				onInput={v => setSignal(prev => ({...prev, silenceCutoff: +v.currentTarget.value}))}
-			>
-				Silence cutoff {silenceCutoffFmt()}
-			</Slider>
-			<Slider
-				disabled={props.constants === null}
-				// hideKnobOnDisabled
-				lighter
-				fillSpace
-				min={constants()?.skipDuration.min ?? -1}
-				max={constants()?.skipDuration.max ?? 1}
-				step={1}
-				value={constants() ? signal().minSkipDuration : 0}
-				onInput={v => setSignal(prev => ({...prev, minSkipDuration: +v.currentTarget.value}))}
-			>
-				Min skip duration {minSkipDurationFmt()}
-			</Slider>
+			<div class="info-cirlce-flex">
+				<Slider
+					disabled={props.constants === null}
+					// hideKnobOnDisabled
+					lighter
+					fillSpace
+					// this value is put in the silenceremove ffmpeg filter
+					// the more negative it is, the quieter the silence has to be to be removed
+					// backend returns the more negative bound as min
+					min={constants()?.silenceCutoff.min ?? -1}
+					max={constants()?.silenceCutoff.max ?? 1}
+					step={0.01}
+					value={constants() ? signal().silenceCutoff : 0}
+					onInput={v => setSignal(prev => ({...prev, silenceCutoff: +v.currentTarget.value}))}
+				>
+					<span class="smaller-letter-spacing">Silence cutoff</span> {silenceCutoffFmt()}{" "}
+				</Slider>
+				<InfoTooltip text="The more negative this value is, the quieter the silence has to be to be removed." />
+			</div>
+			<div class="info-cirlce-flex">
+				<Slider
+					disabled={props.constants === null}
+					// hideKnobOnDisabled
+					lighter
+					fillSpace
+					min={constants()?.skipDuration.min ?? -1}
+					max={constants()?.skipDuration.max ?? 1}
+					step={1}
+					value={constants() ? signal().minSkipDuration : 0}
+					onInput={v => setSignal(prev => ({...prev, minSkipDuration: +v.currentTarget.value}))}
+				>
+					<span class="smaller-letter-spacing">Min skip duration</span> {minSkipDurationFmt()}
+				</Slider>
+				<InfoTooltip
+					text={
+						"Higher values improve user experience by accounting for browser delay in skipping short periods of silence.\nRendering to a video file does not suffer from this."
+					}
+				/>
+			</div>
 		</>
 	);
 }

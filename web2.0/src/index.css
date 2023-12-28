@@ -35,24 +35,27 @@
 	--rounded-border-radius: 15px;
 }
 
-main {
-	width: calc(min(100%, 835px));
-	display: flex;
-	flex-direction: column;
-	gap: 4em;
-	margin-top: 1em;
-}
-
 body {
 	display: flex;
 	justify-content: center;
 	background-color: #111;
 	color: #eee;
+	margin: 0;
+	padding: 8px;
 }
 
 * {
 	font-family: "Minecraft", sans-serif;
 	box-sizing: border-box;
+}
+
+main {
+	--main-container-max-width: 850px;
+	width: calc(min(100%, var(--main-container-max-width)));
+	display: flex;
+	flex-direction: column;
+	gap: 4em;
+	margin-top: 1em;
 }
 
 /* default firefox h5 style. here for consistency */
@@ -77,4 +80,10 @@ h5 {
 }
 .disabled * {
 	cursor: not-allowed !important;
+}
+
+@media (width <= 866px) {
+	.stretch-when-mobile {
+		width: 100%;
+	}
 }

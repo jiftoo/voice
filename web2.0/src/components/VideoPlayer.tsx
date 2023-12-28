@@ -5,6 +5,8 @@ import Button from "./Button";
 import Slider from "./Slider";
 import speakerIcon from "../assets/speaker.svg";
 import mutedIcon from "../assets/muted.svg";
+import playIcon from "../assets/play.svg";
+import pauseIcon from "../assets/pause.svg";
 
 export default function VideoPlayer(props: {src: string; ref?: Ref<HTMLVideoElement>; seekbarBackground?: string}) {
 	const [isPlaying, setIsPlaying] = createSignal(false);
@@ -45,14 +47,19 @@ export default function VideoPlayer(props: {src: string; ref?: Ref<HTMLVideoElem
 
 	return (
 		<div class="video-player rounded" onKeyPress={togglePlay}>
-			<video
-				class=""
-				src={props.src}
-				ref={mergeRefs(props.ref, setVideoRef)}
-				onTimeUpdate={ev => setPosition(ev.currentTarget.currentTime)}
-				onEnded={() => setIsPlaying(false)}
-				onClick={togglePlay}
-			/>
+			<div class="video-wrapper">
+				<div class="overlay-indicator">
+					{isPlaying() ? <img class="playing" src={playIcon} /> : <img class="paused" src={pauseIcon} />}
+				</div>
+				<video
+					class=""
+					src={props.src}
+					ref={mergeRefs(props.ref, setVideoRef)}
+					onTimeUpdate={ev => setPosition(ev.currentTarget.currentTime)}
+					onEnded={() => setIsPlaying(false)}
+					onClick={togglePlay}
+				/>
+			</div>
 			<input
 				class="seekbar rounded"
 				style={{background: props.seekbarBackground}}
@@ -64,8 +71,8 @@ export default function VideoPlayer(props: {src: string; ref?: Ref<HTMLVideoElem
 				onInput={seek}
 			/>
 			<div class="video-controls rounded smaller-slider-gap-hack">
-				<Button variant="accent" onClick={togglePlay}>
-					{isPlaying() ? "Pause" : "Play"}
+				<Button variant="accent" lineHeight={0} onClick={togglePlay}>
+					<img src={isPlaying() ? pauseIcon : playIcon} />
 				</Button>
 				<Slider
 					min={0}
@@ -80,7 +87,7 @@ export default function VideoPlayer(props: {src: string; ref?: Ref<HTMLVideoElem
 						)
 					}
 				>
-					<Button small onClick={() => setMuted(v => !v)}>
+					<Button small lineHeight={0} onClick={() => setMuted(v => !v)}>
 						<img src={muted() ? mutedIcon : speakerIcon} style={{filter: "invert()"}} height="24px" />
 					</Button>
 				</Slider>

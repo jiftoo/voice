@@ -9,16 +9,20 @@
 	padding: 1em;
 	line-height: 1em;
 
-	transform: translate(-10%, -150%);
+	white-space: pre-wrap;
+
+	transform: translate(-40%, calc(-100% - 2em));
 	z-index: 999;
 
 	filter: drop-shadow(0 0 4px var(--dark));
-	
+
 	background-color: var(--secondary);
 
 	visibility: hidden;
 	opacity: 0;
 	transition: opacity 0.1s ease;
+
+	pointer-events: none;
 }
 
 .info-tooltip-icon {
@@ -26,11 +30,18 @@
 	width: 1.2em;
 	height: 1.2em;
 	display: inline-block;
+
+	opacity: 0.5;
+	transition: opacity 0.1s ease;
 }
 
 .info-tooltip-icon > img {
 	width: 100%;
 	aspect-ratio: 1;
+}
+
+.info-tooltip-icon:hover {
+	opacity: 1;
 }
 
 .info-tooltip-icon:hover + .info-tooltip-popup {

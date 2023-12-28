@@ -5,13 +5,19 @@
 }
 
 .side-by-side > *:nth-child(1) {
-	width: 275px;
+	/* width: 275px; */
 }
 
 #upload-container {
 	display: grid;
 	grid-template-columns: 4fr 5fr;
 	gap: 1em;
+}
+
+@media (width <= 866px) {
+	#upload-container {
+		grid-template-columns: 1fr;
+	}
 }
 
 #submit-options {
@@ -23,6 +29,20 @@
 }
 #submit-options > *:not(:first-child) {
 	margin-bottom: 16px;
+}
+
+.info-cirlce-flex {
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+}
+
+.info-cirlce-flex > *:nth-child(2) {
+	flex-shrink: 1;
+}
+
+.smaller-letter-spacing {
+	letter-spacing: -0.5px;
 }
 
 #submit-options fieldset {
@@ -57,19 +77,29 @@
 }
 
 .progress-bar-main-show {
-	animation: progress-bar-appear 0.5s ease forwards;
+	animation: progress-bar-appear 1s ease forwards;
 }
 
 .progress-bar-main-hide {
-	animation: progress-bar-appear 0.5s ease reverse forwards;
+	animation: progress-bar-disappear 1s ease forwards;
 }
 
 @keyframes progress-bar-appear {
-	0% {
+	from {
 		transform: translateY(1em);
 	}
-	100% {
+	to {
 		transform: translateY(0);
+	}
+}
+
+/* animation-direction: reverse didn't work so I duplicated the @keyframes */
+@keyframes progress-bar-disappear {
+	from {
+		transform: translateY(0);
+	}
+	to {
+		transform: translateY(1em);
 	}
 }
 

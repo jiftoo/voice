@@ -9,11 +9,13 @@ export default function Button(props: {
 	variant?: ButtonVariant;
 	disabled?: boolean;
 	small?: boolean;
+	lineHeight?: number;
 }) {
 	let variant = () => props.variant ?? "normal";
 	return (
 		<button
 			class="custom-button"
+			style={{"line-height": props.lineHeight ?? 1}}
 			classList={{[variant()!]: true, disabled: props.disabled, small: props.small}}
 			disabled={props.disabled}
 			onClick={() => {
