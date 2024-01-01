@@ -73,13 +73,20 @@
 
 .video-controls {
 	display: flex;
+	flex-direction: row;
 	justify-content: space-between;
 	align-items: center;
-	gap: 8px;
 
 	border-radius: calc(var(--rounded-border-radius) - var(--wrapper-border-width));
 	border-top-left-radius: 0;
 	border-top-right-radius: 0;
+}
+
+.video-controls .left-wrapper {
+	display: flex;
+	flex-direction: row;
+	gap: 8px;
+	align-items: center;
 }
 
 .video-controls button {
@@ -91,7 +98,9 @@
 	appearance: none;
 	accent-color: red;
 	/* <set inline> */
-	background: var(--non-skip-segment-color);
+	background-color: var(--non-skip-segment-color);
+	background-size: 100% 100%;
+	background-repeat: no-repeat;
 
 	margin-top: 12px;
 	/* doesn't align with background */
@@ -103,12 +112,14 @@
 	transition: height ease-in-out 0.1s;
 
 	--non-hover-thumb-width: 5px;
-	--hover-thumb-width: 14px;
+	--hover-thumb-width: 6px;
 	--seekbar-height: 16px;
-	--seekbar-height-hover: 24px;
+	--seekbar-height-hover: 48px;
 
+	--seekbar-thumb-color: var(--accent);
 	--skip-segment-color: var(--secondary-dark);
-	--non-skip-segment-color: var(--accent);
+	--non-skip-segment-color: var(--secondary);
+	box-shadow: inset 0 0 6px 1px rgba(0, 0, 0, 0.16);
 }
 
 .video-player .seekbar:hover {
@@ -136,11 +147,10 @@
 	width: var(--non-hover-thumb-width);
 	appearance: none;
 	box-sizing: border-box;
-	background-color: var(--white);
+	background-color: var(--seekbar-thumb-color);
 	filter: drop-shadow(0 0 1px var(--secondary));
 	border: none;
-	/* border-radius: var(--rounded-border-radius); */
-	border-radius: 0;
+	border-radius: var(--rounded-border-radius);
 	cursor: pointer;
 }
 /* chrome doesn't parse for some reason this if I do a comma selector */
@@ -156,11 +166,10 @@
 	width: var(--non-hover-thumb-width);
 	appearance: none;
 	box-sizing: border-box;
-	background-color: var(--white);
+	background-color: var(--seekbar-thumb-color);
 	filter: drop-shadow(0 0 1px var(--secondary));
 	border: none;
-	/* border-radius: var(--rounded-border-radius); */
-	border-radius: 0;
+	border-radius: var(--rounded-border-radius);
 	cursor: pointer;
 }
 

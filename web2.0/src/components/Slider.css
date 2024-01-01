@@ -21,7 +21,6 @@
 .range-slider > input {
 	appearance: none;
 	background-color: var(--secondary-dark);
-	outline: none;
 	transition: background-color 0.1s;
 	padding-left: 2px;
 	padding-right: 2px;

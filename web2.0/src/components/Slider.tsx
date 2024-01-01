@@ -10,8 +10,9 @@ export default function Slider(props: {
 	max: number;
 	step: number;
 	value: number;
-	onInput: JSX.ChangeEventHandlerUnion<HTMLInputElement, Event>;
 	children?: JSX.Element;
+	onInput: JSX.ChangeEventHandlerUnion<HTMLInputElement, Event>;
+	onKeyDown?: JSX.EventHandlerUnion<HTMLInputElement, KeyboardEvent>;
 }) {
 	return (
 		<label
@@ -33,6 +34,7 @@ export default function Slider(props: {
 				step={props.step}
 				value={props.value}
 				onInput={ev => (props.onInput as any)(ev)}
+				onKeyDown={props.onKeyDown ? ev => (props.onKeyDown as any)(ev) : undefined}
 			/>
 		</label>
 	);

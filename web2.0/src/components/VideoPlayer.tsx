@@ -8,6 +8,12 @@ import mutedIcon from "../assets/muted.svg";
 import playIcon from "../assets/play.svg";
 import pauseIcon from "../assets/pause.svg";
 
+function formatTime(time: number) {
+	const minutes = Math.floor(time / 60);
+	const seconds = Math.floor(time % 60);
+	return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
 export default function VideoPlayer(props: {src: string; ref?: Ref<HTMLVideoElement>; seekbarBackground?: string}) {
 	const [isPlaying, setIsPlaying] = createSignal(false);
 	const [position, setPosition] = createSignal(0);
@@ -17,13 +23,13 @@ export default function VideoPlayer(props: {src: string; ref?: Ref<HTMLVideoElem
 	const actualVolume = () => (muted() ? 0 : volume());
 
 	const [videoRef, setVideoRef] = createSignal<HTMLVideoElement>(undefined as any);
+
+	const [videoTime, setVideoTime] = createSignal(0);
 	const [videoDuration, setVideoDuration] = createSignal<number | null>(null);
 
-	onMount(() => {
-		videoRef().addEventListener("loadedmetadata", () => {
-			setVideoDuration(videoRef().duration);
-		});
-	});
+	const onTimeUpdate = (ev: any) => {
+		setVideoTime(ev.currentTarget.currentTime);
+	};
 
 	const togglePlay = () => {
 		if (!videoDuration()) return;
@@ -45,8 +51,33 @@ export default function VideoPlayer(props: {src: string; ref?: Ref<HTMLVideoElem
 		setPosition(+position);
 	};
 
+	const keyDownActions = (ev: KeyboardEvent) => {
+		if (ev.key === " ") {
+			togglePlay();
+		}
+		if (ev.key === "ArrowLeft") {
+			ev.preventDefault();
+			videoRef().currentTime -= 5;
+		}
+		if (ev.key === "ArrowRight") {
+			ev.preventDefault();
+			videoRef().currentTime += 5;
+		}
+		if (ev.key === "ArrowUp") {
+			ev.preventDefault();
+			setVolume(v => Math.min(1, v + 0.1));
+		}
+		if (ev.key === "ArrowDown") {
+			ev.preventDefault();
+			setVolume(v => Math.max(0, v - 0.1));
+		}
+		if (ev.key === "m") {
+			setMuted(v => !v);
+		}
+	};
+
 	return (
-		<div class="video-player rounded" onKeyPress={togglePlay}>
+		<div class="video-player rounded" onKeyDown={keyDownActions} tabIndex={-1}>
 			<div class="video-wrapper">
 				<div class="overlay-indicator">
 					{isPlaying() ? <img class="playing" src={playIcon} /> : <img class="paused" src={pauseIcon} />}
@@ -58,11 +89,14 @@ export default function VideoPlayer(props: {src: string; ref?: Ref<HTMLVideoElem
 					onTimeUpdate={ev => setPosition(ev.currentTarget.currentTime)}
 					onEnded={() => setIsPlaying(false)}
 					onClick={togglePlay}
+					ontimeupdate={onTimeUpdate}
+					onLoadedMetadata={() => setVideoDuration(videoRef().duration)}
+					onWaiting={() => console.log("waiting")}
 				/>
 			</div>
 			<input
 				class="seekbar rounded"
-				style={{background: props.seekbarBackground}}
+				style={{"background-image": props.seekbarBackground}}
 				type="range"
 				min="0"
 				max={videoDuration()!}
@@ -71,9 +105,14 @@ export default function VideoPlayer(props: {src: string; ref?: Ref<HTMLVideoElem
 				onInput={seek}
 			/>
 			<div class="video-controls rounded smaller-slider-gap-hack">
-				<Button variant="accent" lineHeight={0} onClick={togglePlay}>
-					<img src={isPlaying() ? pauseIcon : playIcon} />
-				</Button>
+				<div class="left-wrapper">
+					<Button variant="accent" lineHeight={0} onClick={togglePlay}>
+						<img src={isPlaying() ? pauseIcon : playIcon} />
+					</Button>
+					<span>
+						{formatTime(videoTime())} / {formatTime(videoDuration()!)}
+					</span>
+				</div>
 				<Slider
 					min={0}
 					max={1}
@@ -86,6 +125,7 @@ export default function VideoPlayer(props: {src: string; ref?: Ref<HTMLVideoElem
 							setMuted(+ev.currentTarget.value === 0)
 						)
 					}
+					onKeyDown={ev => ev.stopPropagation()}
 				>
 					<Button small lineHeight={0} onClick={() => setMuted(v => !v)}>
 						<img src={muted() ? mutedIcon : speakerIcon} style={{filter: "invert()"}} height="24px" />

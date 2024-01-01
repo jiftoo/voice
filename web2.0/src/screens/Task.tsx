@@ -3,12 +3,13 @@ import "./Task.css";
 import CopyableToken from "../components/CopyableToken";
 import video from "../assets/mit.webm";
 import skipsJson from "../assets/mitSkips.json";
+import wavePng from "../assets/wave.png";
 import {createEffect, createSignal, onCleanup, onMount} from "solid-js";
 import {IntervalTree} from "../intervalTree";
 import VideoPlayer from "../components/VideoPlayer";
 
 export default function Task() {
-	const skips = skipsJson.filter(([a, b]) => b - a > 0.2) as [number, number][]
+	const skips = skipsJson.filter(([a, b]) => b - a > 0.2) as [number, number][];
 	const {id: taskId} = useParams();
 
 	const [videoRef, setVideoRef] = createSignal<HTMLVideoElement | undefined>(undefined);
@@ -54,7 +55,8 @@ export default function Task() {
 
 		gradient += ")";
 
-		return gradient;
+		// return gradient;
+		return `url(${wavePng}), ${gradient}`;
 	};
 
 	createEffect(() => {

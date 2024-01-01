@@ -2,7 +2,7 @@ import {JSX, Setter, Signal, createEffect, createResource, createSignal} from "s
 import {useNavigate} from "@solidjs/router";
 import "./Upload.css";
 import {GLOBAL_STATE} from "../globalState";
-import {createResourceDebounced} from "../util";
+import {Loading, createResourceDebounced} from "../util";
 import Button from "../components/Button";
 import FileSelector from "../components/FileSelector";
 import InputField from "../components/InputField";
@@ -10,51 +10,29 @@ import ProgressBar from "../components/ProgressBar";
 import Switch from "../components/Switch";
 import Slider from "../components/Slider";
 import InfoTooltip from "../components/InfoTooltip";
+import {IsUrlAcceptableFileOutput, RestResult, checkUploadUrl} from "../rest";
 
-type IsUrlAcceptableFileOutput = "ok" | "not-video" | "too-big" | "server-error" | "request-error";
-
-async function isUrlAcceptableFile(url: string): Promise<IsUrlAcceptableFileOutput> {
-	return fetch("http://localhost:3001/check-upload-url?premium=" + GLOBAL_STATE.premium[0](), {
-		method: "POST",
-		headers: {
-			"Content-Type": "text/plain"
-		},
-		body: url
-	})
-		.then(res => {
-			switch (res.status) {
-				case 200:
-					return "ok";
-				case 415:
-					return "not-video";
-				case 413:
-					return "too-big";
-				default:
-					console.error("Unexpected status code: " + res.status);
-					return "server-error";
-			}
-		})
-		.catch(err => {
-			console.error(err);
-			return "request-error";
-		});
-}
-
-function mapIsUrlAcceptableFileOutputToMessage(output: IsUrlAcceptableFileOutput): string {
-	switch (output) {
-		case "ok":
-			return "";
-		case "not-video":
-			return "Url is not a valid video!";
-		case "too-big":
-			return "Video is too big!";
-		case "server-error":
+function mapIsUrlAcceptableFileOutputToMessage(output: RestResult<IsUrlAcceptableFileOutput>): string {
+	if (output.error) {
+		if (output.error.type === "server") {
 			return "Server error!";
-		case "request-error":
+		} else if (output.error.type === "network") {
 			return "Request error or timeout!";
-		default:
-			return "unreachable";
+		}
+	} else {
+		const [status, _] = output.data;
+		switch (status) {
+			case "ok":
+				return "";
+			case "bad-url":
+				return "Url is not valid!";
+			case "not-video":
+				return "Url is not a valid video!";
+			case "too-big":
+				return "Video is too big!";
+		}
 	}
+	return "unreachable";
 }
 
 type Constants = {
@@ -70,7 +48,21 @@ function fetchConstants(isPremium: boolean, abortSignal?: AbortSignal): Promise<
 	}).then(res => res.json());
 }
 
+async function test() {
+	console.log("https://google.com", await checkUploadUrl("https://google.com"));
+	console.log("file://sex", await checkUploadUrl("file://sex"));
+	console.log("https://i.redd.it/ruplztk6xf9c1.png", await checkUploadUrl("https://i.redd.it/ruplztk6xf9c1.png"));
+	console.log("1234", await checkUploadUrl("1234"));
+	console.log(
+		"https://cdn.discordapp.com/attachments/926206953976377374/1190604987638747207/Hardtek_Fake_to_Fake_dat_file_records_jq7_uPeMjIE.mp4",
+		await checkUploadUrl(
+			"https://cdn.discordapp.com/attachments/926206953976377374/1190604987638747207/Hardtek_Fake_to_Fake_dat_file_records_jq7_uPeMjIE.mp4"
+		)
+	);
+}
+
 export default function Upload() {
+	// test();
 	const navigate = useNavigate();
 
 	const [selectedFile, setSelectedFile] = createSignal<File | null>(null);
@@ -105,29 +97,39 @@ export default function Upload() {
 		}, 3000);
 	});
 
-	const isAcceptableAtUrl = createResourceDebounced(
+	const [isAcceptableAtUrl, {loading: isAcceptableAtUrlLoading}] = createResourceDebounced(
 		url,
-		async url => (url !== "" ? await isUrlAcceptableFile(url) : undefined),
+		async url => (url !== "" ? await checkUploadUrl(url) : undefined),
 		400
 	);
 
-	const [fileTooBig, setFileTooBig] = createSignal<boolean>(false);
+	const [pickedFileSize, setPickedFileSize] = createSignal<number | null>(null);
+	const fileTooBig = () =>
+		constants() !== null && pickedFileSize() !== null ? pickedFileSize()! > constants()!.maxFileSize : false;
+	// (selectedFile()?.size ?? 0) > constants()!.maxFileSize || isAcceptableAtUrl()?.data === "too-big";
 
 	createEffect(() => {
 		if (!constants()) return;
-		const pickerFileTooBig = (selectedFile()?.size ?? 0) > constants()!.maxFileSize;
-		const urlFileTooBig = isAcceptableAtUrl() === "too-big";
-		setFileTooBig(pickerFileTooBig || urlFileTooBig);
+		const urlData = isAcceptableAtUrl()?.data;
+		if (urlData && (urlData[0] === "ok" || urlData[0] === "too-big")) {
+			setPickedFileSize(urlData[1]);
+		} else {
+			setPickedFileSize(selectedFile()?.size ?? null);
+		}
 	});
 
 	const clearFile = () => {
 		setSelectedFile(null);
-		setFileTooBig(false);
+		setPickedFileSize(null);
 	};
 
 	const oneOfInputsIsValid = () => {
-		return (selectedFile() && !fileTooBig()) || isAcceptableAtUrl() === "ok";
+		return (
+			(selectedFile() && !fileTooBig()) || (isAcceptableAtUrl()?.data && isAcceptableAtUrl()?.data?.[0] === "ok")
+		);
 	};
+
+	const canTryUpload = () => oneOfInputsIsValid() && !isUploading();
 
 	const [uploadProgress, setUploadProgress] = createSignal(0);
 
@@ -164,18 +166,24 @@ export default function Upload() {
 			file.arrayBuffer().then(buffer => xhr.send(buffer));
 		}
 	};
-	let a = 0;
+
 	const isUploading = () => uploadProgress() !== 0;
 
 	return (
 		<>
 			<div id="upload-container">
-				<div>
+				<div
+					onKeyDown={ev => {
+						if (ev.key === "Enter" && canTryUpload()) {
+							tryUpload();
+						}
+					}}
+				>
 					<h5>Select a video from your device</h5>
 					<SideBySide>
 						<FileSelector
 							accept=".mp4, video/webm"
-							disabled={isUploading() || isAcceptableAtUrl() === "ok"}
+							disabled={isUploading() || isAcceptableAtUrl()?.data?.[0] === "ok"}
 							signal={[selectedFile, setSelectedFile]}
 						/>
 						{selectedFile() && (
@@ -192,7 +200,8 @@ export default function Upload() {
 							placeholder="https://"
 							signal={[url, setUrl]}
 						/>
-						{isAcceptableAtUrl() && (
+						{isAcceptableAtUrlLoading() && <Loading />}
+						{isAcceptableAtUrl() && !isAcceptableAtUrlLoading() && (
 							<span id="video-from-url-error">
 								{mapIsUrlAcceptableFileOutputToMessage(isAcceptableAtUrl()!)}
 							</span>
@@ -203,7 +212,9 @@ export default function Upload() {
 						<br />
 						Max file size:{" "}
 						<span id="max-file-size" classList={{highlighted: fileTooBig()}}>
-							{constants() === null ? "..." : constants()!.maxFileSize / 1024 / 1024 + " MiB"}
+							{constants() === null
+								? "..."
+								: (constants()!.maxFileSize / 1024 / 1024).toFixed(2) + " MiB"}
 						</span>
 					</h5>
 				</div>
@@ -213,7 +224,7 @@ export default function Upload() {
 					<PremiumOnlyOptions signal={[uploadOptions, setUploadOptions]} />
 				</div>
 			</div>
-			<Button disabled={!oneOfInputsIsValid() || isUploading()} variant="accent" onClick={tryUpload}>
+			<Button disabled={canTryUpload()} variant="accent" onClick={tryUpload}>
 				Upload
 			</Button>
 			<UploadProgressBar progress={uploadProgress()} show={isUploading()} />
