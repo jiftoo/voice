@@ -84,17 +84,15 @@ export default function Upload() {
 			.catch(ex => {
 				if (ex.name === "AbortError") return;
 			});
+
 	createEffect(() => {
 		fetchAndSetConstants();
-		const retryHandle = setInterval(() => {
-			if (constants()) {
-				clearInterval(retryHandle);
-				return;
+		// retry once
+		setTimeout(() => {
+			if (!constants()) {
+				fetchAndSetConstants();
 			}
-			abortController.abort();
-			abortController = new AbortController();
-			fetchAndSetConstants();
-		}, 3000);
+		}, 5000);
 	});
 
 	const [isAcceptableAtUrl, {loading: isAcceptableAtUrlLoading}] = createResourceDebounced(
@@ -124,7 +122,7 @@ export default function Upload() {
 	};
 
 	const oneOfInputsIsValid = () => {
-		return (
+		return Boolean(
 			(selectedFile() && !fileTooBig()) || (isAcceptableAtUrl()?.data && isAcceptableAtUrl()?.data?.[0] === "ok")
 		);
 	};

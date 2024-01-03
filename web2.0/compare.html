@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Document</title>
+		<style>
+			body {
+				display: flex;
+				justify-content: start;
+				flex-direction: column;
+			}
+			input {
+				width: 800px;
+			}
+			#firstContainer,
+			#secondContainer {
+				font-family: monospace;
+				/* font-size: 0.8em; */
+				white-space: pre;
+				display: flex;
+			}
+			span {
+				display: block;
+				width: 2px;
+				height: 10px;
+			}
+			#secondContainer {
+				border-top: 1px solid black;
+			}
+		</style>
+	</head>
+	<body>
+		<input id="first" />
+		<br />
+		<input id="second" />
+		<br />
+		<button>Compare</button>
+		<br />
+		<br />
+		<div>
+			<div id="firstContainer"></div>
+			<div id="secondContainer"></div>
+		</div>
+		<div id="distance"></div>
+	</body>
+	<script>
+		const first = document.getElementById("first");
+		const second = document.getElementById("second");
+		const firstContainer = document.getElementById("firstContainer");
+		const secondContainer = document.getElementById("secondContainer");
+		const button = document.querySelector("button");
+
+		const charMap = Object.fromEntries(
+			"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+				.split("")
+				.map((v, i, arr) => [v, i / arr.length])
+		);
+
+		function hammingDistance(str1, str2) {
+			if (str1.length !== str2.length) {
+				throw new Error("Strings must be of the same length");
+			}
+
+			let distance = 0;
+			for (let i = 0; i < str1.length; i++) {
+				if (str1[i] !== str2[i]) {
+					distance++;
+				}
+			}
+
+			return distance;
+		}
+
+		function colorize(letter, invert = false) {
+			return `hsl(${+invert * (360 / 2)}, ${charMap[letter] * 100}%, ${charMap[letter] * 50 + 20}%)`;
+		}
+
+		function appendSpan(letter, el) {
+			const span = document.createElement("span");
+			span.innerHTML = letter;
+			// span.style.color = colorize(letter, false);
+			span.style.color = "transparent";
+			// span.style.backgroundColor = colorize(letter, true);
+			span.style.backgroundColor = letter == "0" ? "black" : "red";
+			el.appendChild(span);
+		}
+
+		button.addEventListener("click", () => {
+			const firstValue = first.value;
+			const secondValue = second.value;
+
+			const firstArray = firstValue
+				.split(",")
+				.map(v => (+v).toString(2).split(""))
+				.flat();
+			const secondArray = secondValue
+				.split(",")
+				.map(v => (+v).toString(2).split(""))
+				.flat();
+			console.log(firstArray, secondArray);
+
+			firstContainer.innerHTML = "";
+			secondContainer.innerHTML = "";
+
+			firstArray.forEach(letter => {
+				appendSpan(letter, firstContainer);
+			});
+
+			secondArray.forEach(letter => {
+				appendSpan(letter, secondContainer);
+			});
+
+			const distance = hammingDistance(firstValue, secondValue);
+			document.getElementById("distance").innerHTML = "Distance: " + distance;
+		});
+	</script>
+</html>

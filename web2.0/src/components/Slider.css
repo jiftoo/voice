@@ -47,11 +47,11 @@
 	margin-bottom: 2px;
 }
 
-.range-slider > input:hover {
+.range-slider > input:not(:disabled):hover {
 	background-color: var(--secondary-dark-highlight);
 }
 
-.range-slider.lighter > input:hover {
+.range-slider.lighter > input:not(:disabled):hover {
 	background-color: var(--secondary-highlight);
 }
 

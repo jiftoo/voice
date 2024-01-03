@@ -1,3 +1,4 @@
+workspace = { members = ["web2.0/voice-shared"] }
 [package]
 name = "voice"
 version = "0.3.1"

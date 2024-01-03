@@ -1,0 +1,28 @@
+FROM rust:1.75 as chef
+	RUN cargo install cargo-chef
+	RUN rustup target add x86_64-unknown-linux-musl
+	RUN apt update && \
+		apt install -y musl ffmpeg imagemagick && \
+		rm -rf /var/lib/apt/lists/*
+
+	WORKDIR /voice-waveform-gen
+	COPY . .
+
+	FROM chef as planner
+	RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef as builder
+	COPY --from=planner /voice-waveform-gen/recipe.json recipe.json
+
+	ENV RUSTFLAGS="-C target-feature=+crt-static"
+	RUN cargo chef cook --release --target x86_64-unknown-linux-musl --recipe-path recipe.json
+	COPY . .
+	RUN cargo build --release --target x86_64-unknown-linux-musl --bin voice-waveform-gen
+
+FROM scratch
+
+	COPY --from=builder /voice-waveform-gen/target/x86_64-unknown-linux-musl/release/voice-waveform-gen /voice-waveform-gen
+	COPY --from=builder /usr/bin/ffmpeg /usr/bin/ffmpeg
+	COPY --from=builder /usr/bin/convert /usr/bin/convert
+
+ENTRYPOINT ["/voice-waveform-gen"]

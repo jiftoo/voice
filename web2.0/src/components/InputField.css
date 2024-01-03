@@ -20,3 +20,8 @@
 	filter: brightness(0.7) contrast(0.7);
 	cursor: not-allowed;
 }
+
+/* chrome fix */
+.input-field::placeholder {
+	color: var(--primary);
+}
