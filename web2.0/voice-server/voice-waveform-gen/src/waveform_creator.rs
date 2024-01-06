@@ -1,10 +1,6 @@
-use std::{str::FromStr, sync::Arc};
-
-use axum::http::Uri;
 use url::Url;
 use voice_shared::{
-	RemoteFile, RemoteFileIdentifier, RemoteFileKind, RemoteFileManager,
-	RemoteFileManagerError,
+	RemoteFileIdentifier, RemoteFileKind, RemoteFileManager, RemoteFileManagerError,
 };
 
 pub struct WaveformCreator<T: RemoteFileManager> {
@@ -26,7 +22,7 @@ impl<T: RemoteFileManager> WaveformCreator<T> {
 			return Ok(self.file_manager.file_url(&file).await.as_url().to_owned());
 		}
 
-		let video_file =
+		let _video_file =
 			self.file_manager.get_file(input_file, RemoteFileKind::VideoInput).await?;
 
 		let waveform = [0u8; 100];

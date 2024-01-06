@@ -228,10 +228,7 @@ pub struct VoiceTask {
 }
 
 pub mod debug_remote {
-	use std::{
-		fs::File,
-		path::{Path, PathBuf},
-	};
+	use std::path::{Path, PathBuf};
 
 	use super::*;
 

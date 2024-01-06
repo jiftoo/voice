@@ -1,28 +1,21 @@
 mod util;
 
-use std::{
-	collections::{HashMap, HashSet},
-	env::var,
-	str::FromStr,
-	sync::Arc,
-};
+use std::{env::var, sync::Arc};
 
 use axum::{
 	body::Bytes,
-	extract::{FromRequestParts, Query, State},
+	extract::State,
 	http::{
-		header::{self, CONTENT_TYPE},
-		request::Parts,
-		uri, HeaderMap, HeaderName, HeaderValue, StatusCode, Uri,
+		header::{self},
+		uri, HeaderMap, StatusCode, Uri,
 	},
-	response::{IntoResponse, Redirect},
-	routing::{get, post},
-	Json, Router,
+	routing::post,
+	Router,
 };
-use serde::{Deserialize, Deserializer};
+
 use tokio::net::TcpListener;
 
-use voice_shared::{debug_remote, RemoteFileKind, RemoteFileManager};
+use voice_shared::{RemoteFileKind, RemoteFileManager};
 
 #[tokio::main]
 async fn main() {

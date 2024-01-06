@@ -1,11 +1,9 @@
 use std::{
 	collections::HashSet,
 	fmt::{Display, Formatter, Result},
-	io::{BufRead, Cursor},
-	ops::Deref,
+	io::BufRead,
 };
 
-use csv::StringRecord;
 use tokio::io::AsyncWriteExt;
 
 type VideoPropertyValue = String;
