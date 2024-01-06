@@ -1,3 +1,5 @@
+mod waveform_creator;
+
 use std::{
 	collections::{HashMap, HashSet},
 	env::var,
@@ -12,12 +14,16 @@ use axum::{
 	Router,
 };
 use tokio::net::TcpListener;
+use voice_shared::{
+	RemoteFile, RemoteFileIdentifier, RemoteFileManager, RemoteFileManagerError,
+};
+use waveform_creator::WaveformCreator;
 
 #[tokio::main]
 async fn main() {
-	let router = Router::new()
-		.route("/", get(get_waveform))
-		.with_state(Arc::new(FileManager::new()));
+	let router = Router::new().route("/", get(get_waveform)).with_state(Arc::new(
+		WaveformCreator::new(voice_shared::debug_remote::file_manager()),
+	));
 	axum::serve(
 		TcpListener::bind((
 			"0.0.0.0",
@@ -34,26 +40,16 @@ async fn main() {
 #[derive(serde::Deserialize)]
 struct GetWaveformQuery(#[serde(rename = "fileHash")] String);
 
-async fn get_waveform(
+async fn get_waveform<T: RemoteFileManager>(
 	Query(GetWaveformQuery(hash)): Query<GetWaveformQuery>,
-	State(waveform_creator): State<Arc<impl WaveformCreator>>,
+	State(waveform_creator): State<Arc<WaveformCreator<T>>>,
 ) -> Result<Redirect, StatusCode> {
-	waveform_creator
-		.get_waveform_url(hash)
-		.map(Redirect::to)
-		.map_err(|_| StatusCode::NOT_FOUND)
-}
+	let file_identifier: RemoteFileIdentifier =
+		hash.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
 
-trait WaveformCreator {
-	fn get_waveform_url(&mut self, hash: String) -> Uri;
-}
-
-struct FileManager {
-	cache: HashSet<String>,
-}
-
-impl FileManager {
-	fn new() -> Self {
-		Self { cache: HashSet::new() }
+	match waveform_creator.get_waveform(&file_identifier).await {
+		Ok(remote_file) => Ok(Redirect::to(remote_file.as_ref())),
+		Err(RemoteFileManagerError::ReadError) => Err(StatusCode::NOT_FOUND),
+		Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
 	}
 }
