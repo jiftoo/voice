@@ -11,4 +11,5 @@ reqwest = "0.11.23"
 serde = "1.0.194"
 sha2 = "0.10.8"
 tokio = { version = "1.35.1", features = ["full"] }
+tower-http = { version = "0.5.0", features = ["cors"] }
 voice-shared = { path = "../voice-shared" }

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Test</title>
+		<style>
+			body > *:not(script) {
+				display: block;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>File upload</h1>
+		<div id="fileIdentifier"></div>
+		<img id="waveform" style="filter: invert()" />
+		<input type="file" id="file" />
+		<button id="uploadFile">Upload</button>
+		<input type="url" id="url" />
+		<button id="uploadUrl">Upload</button>
+
+		<script>
+			function fileUploadCallback(id) {
+				console.log("File uploaded", id);
+				document.getElementById("fileIdentifier").innerText = id;
+				document.getElementById("waveform").src = "http://localhost:3003/" + id;
+			}
+
+			(function () {
+				let file = document.getElementById("file");
+				let url = document.getElementById("url");
+				let uploadFile = document.getElementById("uploadFile");
+				let uploadUrl = document.getElementById("uploadUrl");
+
+				uploadFile.addEventListener("click", function () {
+					document.getElementById("waveform").innerHTML = "";
+
+					fetch("http://localhost:3002", {
+						method: "POST",
+						headers: {
+							"Content-Type": "application/octet-stream"
+						},
+						body: file.files[0]
+					})
+						.then(v => v.text())
+						.then(fileUploadCallback);
+				});
+				uploadUrl.addEventListener("click", function () {
+					document.getElementById("waveform").innerHTML = "";
+					
+					fetch("http://localhost:3002", {
+						method: "POST",
+						headers: {
+							"Content-Type": "text/x-url"
+						},
+						body: url.value
+					})
+						.then(v => v.text())
+						.then(fileUploadCallback);
+				});
+			})();
+		</script>
+	</body>
+</html>

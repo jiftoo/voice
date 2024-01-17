@@ -133,7 +133,7 @@ pub async fn get_video_info(
 			}
 			line if line.starts_with("format") => {
 				container =
-					Some(line.split(',').skip(1).next().unwrap().replace("\"", ""));
+					Some(line.split(',').nth(1).unwrap().replace('\"', ""));
 			}
 			_ => unreachable!("ffprobe output is malformed"),
 		}

@@ -37,7 +37,7 @@ impl<T> Debug for PrivateDebug<T> {
 	}
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(packed, C)]
 pub struct RemoteFileIdentifier {
 	hash: [u8; 30],
@@ -57,9 +57,15 @@ impl AsRef<[u8]> for RemoteFileIdentifier {
 	}
 }
 
-impl std::fmt::Display for RemoteFileIdentifier {
+impl Display for RemoteFileIdentifier {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "{}", hex::encode(self))
+	}
+}
+
+impl Debug for RemoteFileIdentifier {
+	fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+		Display::fmt(self, f)
 	}
 }
 
@@ -111,8 +117,11 @@ impl TryFrom<&[u8]> for RemoteFileIdentifier {
 
 impl RemoteFileIdentifier {
 	pub fn digest(data: impl sha256::Sha256Digest) -> Self {
+		let mut hash_full = [0; 32];
+		hex::decode_to_slice(sha256::digest(data), &mut hash_full).unwrap();
+
 		let mut hash = [0; 30];
-		hash.copy_from_slice(&sha256::digest(data).as_bytes()[0..30]);
+		hash.copy_from_slice(&hash_full[0..30]);
 
 		Self { hash, magic: 0x69, check: Self::check(&hash) }
 	}
@@ -147,9 +156,16 @@ pub trait RemoteFileManager: Sync + Send {
 	) -> Result<Vec<u8>, RemoteFileManagerError>;
 	async fn delete_file(&self, file: &RemoteFile) -> Result<(), RemoteFileManagerError>;
 
+	/// Returs the url of the file
+	///
+	/// The url should be accessible by any part of the application.
+	/// The url is not guaranteed to be a direct link to a local file.
+	/// Callers of this function are to assume that the url always contains a file
+	/// and are to handle the access to the file based on the schema of the url.
 	async fn file_url(&self, file: &RemoteFile) -> FileUrl;
 }
 
+#[derive(Debug)]
 pub struct FileUrl(url::Url);
 
 impl Display for FileUrl {
@@ -168,9 +184,11 @@ impl FileUrl {
 	}
 }
 
+#[derive(Debug)]
 pub enum RemoteFileManagerError {
 	ReadError,
 	WriteError,
+	ChildError(Cow<'static, str>),
 	Unspecified(Cow<'static, str>),
 }
 
@@ -184,13 +202,28 @@ impl RemoteFile {
 	pub fn new(kind: RemoteFileKind, name: RemoteFileIdentifier) -> Self {
 		Self { kind, name }
 	}
+
+	pub fn identifier(&self) -> &RemoteFileIdentifier {
+		&self.name
+	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum RemoteFileKind {
 	VideoInput,
-	VideoOutput,
-	Waveform,
+	// RemoteFileIdentifier identify the parent file
+	VideoOutput(RemoteFileIdentifier),
+	Waveform(RemoteFileIdentifier),
+}
+
+impl RemoteFileKind {
+	pub fn as_dir_name(&self) -> &'static str {
+		match self {
+			Self::VideoInput => "inputs",
+			Self::VideoOutput(_) => "outputs",
+			Self::Waveform(_) => "waveforms",
+		}
+	}
 }
 
 // public api
@@ -233,7 +266,9 @@ pub mod debug_remote {
 	use super::*;
 
 	pub fn file_manager() -> impl RemoteFileManager {
-		debug_remote::DebugRemoteManager::new("./debug_bucket")
+		debug_remote::DebugRemoteManager::new(
+			"D:\\Coding\\rust\\voice\\web2.0\\voice-server\\debug_bucket",
+		)
 	}
 
 	#[derive(Debug)]
@@ -243,7 +278,22 @@ pub mod debug_remote {
 
 	impl DebugRemoteManager {
 		pub fn new(root: impl AsRef<Path>) -> Self {
+			if !root.as_ref().is_absolute() {
+				// this must be true since this code is shared between multiple crates
+				panic!("root must be absolute");
+			}
+			match std::fs::create_dir(&root) {
+				Ok(_) => {}
+				Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+				Err(e) => panic!("failed to create debug bucket: {}", e),
+			}
 			Self { root: root.as_ref().to_path_buf() }
+		}
+
+		fn make_file_path(&self, file: &RemoteFile) -> PathBuf {
+			let bucket_dir_name: &Path = file.kind.as_dir_name().as_ref();
+			let bucket_path = bucket_dir_name.join(file.name.to_string());
+			self.root.join(bucket_path)
 		}
 	}
 
@@ -254,15 +304,29 @@ pub mod debug_remote {
 			file: &[u8],
 			kind: RemoteFileKind,
 		) -> Result<RemoteFile, RemoteFileManagerError> {
-			let hash = RemoteFileIdentifier::digest(file);
+			// make a new hash or use the same hash as the parent for derived files
+			let hash = match kind {
+				RemoteFileKind::VideoOutput(hash) | RemoteFileKind::Waveform(hash) => {
+					hash
+				}
+				RemoteFileKind::VideoInput => RemoteFileIdentifier::digest(file),
+			};
+
+			println!("uploading file: {} {:?}", hash, kind);
 			if let Ok(file) = self.get_file(&hash, kind).await {
+				println!("file already exists");
 				return Ok(file);
 			}
-			let path = self.root.join(hash.to_string()).display().to_string();
-			let _ = tokio::fs::write(&path, file)
-				.await
-				.map_err(|_| RemoteFileManagerError::WriteError)?;
-			Ok(RemoteFile::new(RemoteFileKind::VideoInput, hash))
+			let path = self.make_file_path(&RemoteFile::new(kind, hash));
+
+			println!("writing file to {}", path.display());
+			let _ = tokio::fs::create_dir_all(&path.parent().unwrap()).await;
+			let _ = tokio::fs::write(&path, file).await.map_err(|x| {
+				println!("failed to write file: {}", x);
+				RemoteFileManagerError::WriteError
+			})?;
+
+			Ok(RemoteFile::new(kind, hash))
 		}
 
 		async fn get_file(
@@ -270,15 +334,10 @@ pub mod debug_remote {
 			name: &RemoteFileIdentifier,
 			kind: RemoteFileKind,
 		) -> Result<RemoteFile, RemoteFileManagerError> {
-			let path = self
-				.root
-				.join(match kind {
-					RemoteFileKind::VideoInput => "inputs",
-					RemoteFileKind::VideoOutput => "outputs",
-					RemoteFileKind::Waveform => "waveforms",
-				})
-				.join(name.to_string());
-			if let Ok(true) = tokio::fs::try_exists(path).await {
+			if let Ok(true) =
+				tokio::fs::try_exists(self.make_file_path(&RemoteFile::new(kind, *name)))
+					.await
+			{
 				Ok(RemoteFile::new(kind, *name))
 			} else {
 				Err(RemoteFileManagerError::ReadError)
@@ -289,29 +348,26 @@ pub mod debug_remote {
 			&self,
 			file: &RemoteFile,
 		) -> Result<Vec<u8>, RemoteFileManagerError> {
-			let path = self.root.join(file.name.to_string());
-			tokio::fs::read(path).await.map_err(|_| RemoteFileManagerError::ReadError)
+			tokio::fs::read(self.make_file_path(file)).await.map_err(|x| {
+				println!(
+					"failed to read file: {x:?} {}",
+					self.make_file_path(file).display()
+				);
+				RemoteFileManagerError::ReadError
+			})
 		}
 
 		async fn delete_file(
 			&self,
 			file: &RemoteFile,
 		) -> Result<(), RemoteFileManagerError> {
-			let path = self.root.join(file.name.to_string());
-			tokio::fs::remove_file(path)
+			tokio::fs::remove_file(self.make_file_path(file))
 				.await
 				.map_err(|_| RemoteFileManagerError::ReadError)
 		}
 
 		async fn file_url(&self, file: &RemoteFile) -> FileUrl {
-			FileUrl(
-				format!(
-					"http://localhost:3002/{}",
-					self.root.join(file.name.to_string()).display()
-				)
-				.parse()
-				.unwrap(),
-			)
+			FileUrl(url::Url::from_file_path(self.make_file_path(file)).unwrap())
 		}
 	}
 
