@@ -97,7 +97,8 @@
 	height: var(--seekbar-height);
 	appearance: none;
 	accent-color: red;
-	/* <set inline> */
+	/* background: <set inline> */
+	image-rendering: pixelated; /* don't change to crisp-edges */
 	background-color: var(--non-skip-segment-color);
 	background-size: 100% 100%;
 	background-repeat: no-repeat;

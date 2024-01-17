@@ -69,6 +69,7 @@ async fn get_waveform<T: RemoteFileManager>(
 	State(waveform_creator): State<Arc<WaveformCreator<T>>>,
 	Path(file_identifier): Path<String>,
 ) -> Result<(HeaderMap, Vec<u8>), StatusCode> {
+	println!("get waveform route");
 	let file_identifier: RemoteFileIdentifier =
 		file_identifier.parse().map_err(|_| {
 			println!("failed to parse file identifier");

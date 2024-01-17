@@ -4,6 +4,15 @@
 	"extends": ["eslint:recommended", "plugin:solid/typescript"],
 	"rules": {
 		"no-unused-vars": "off",
-		"@typescript-eslint/no-unused-vars": "error"
+		"@typescript-eslint/no-unused-vars": [
+			"warn",
+			{
+				"varsIgnorePattern": "_" // Ignore underscores, like in Rust
+			}
+		],
+		"@typescript-eslint/switch-exhaustiveness-check": "error"
+	},
+	"parserOptions": {
+		"project": "./tsconfig.json"
 	}
 }

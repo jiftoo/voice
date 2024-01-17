@@ -10,7 +10,14 @@ import ProgressBar from "../components/ProgressBar";
 import Switch from "../components/Switch";
 import Slider from "../components/Slider";
 import InfoTooltip from "../components/InfoTooltip";
-import {IsUrlAcceptableFileOutput, RestResult, checkUploadUrl} from "../rest";
+import {
+	IsUrlAcceptableFileOutput,
+	RestResult,
+	checkUploadUrl,
+	fetchConstants,
+	newUrlOrNull,
+	xhrUploadFile
+} from "../rest";
 
 function mapIsUrlAcceptableFileOutputToMessage(output: RestResult<IsUrlAcceptableFileOutput>): string {
 	if (output.error) {
@@ -20,14 +27,23 @@ function mapIsUrlAcceptableFileOutputToMessage(output: RestResult<IsUrlAcceptabl
 			return "Request error or timeout!";
 		}
 	} else {
-		const [status, _] = output.data;
+		const [status, msg] = output.data;
 		switch (status) {
 			case "ok":
 				return "";
 			case "bad-url":
+				if (msg.validWithScheme) {
+					return "Try adding https:// or http:// to the url!";
+				}
 				return "Url is not valid!";
+			case "unreachable":
+				return "Url is unreachable!";
+			case "request-error":
+				return "Request did not succeed!";
 			case "not-video":
 				return "Url is not a valid video!";
+			case "bad-response":
+				return "Endpoint doesn't share content-length!";
 			case "too-big":
 				return "Video is too big!";
 		}
@@ -40,13 +56,6 @@ type Constants = {
 	skipDuration: {min: number; max: number};
 	maxFileSize: number;
 };
-
-function fetchConstants(isPremium: boolean, abortSignal?: AbortSignal): Promise<Constants> {
-	return fetch("http://localhost:3001/constants?premium=" + isPremium, {
-		signal: abortSignal
-		// credentials: "include"
-	}).then(res => res.json());
-}
 
 async function test() {
 	console.log("https://google.com", await checkUploadUrl("https://google.com"));
@@ -101,6 +110,10 @@ export default function Upload() {
 		400
 	);
 
+	createEffect(() => {
+		console.log("canTryUpload", canTryUpload());
+	});
+
 	const [pickedFileSize, setPickedFileSize] = createSignal<number | null>(null);
 	const fileTooBig = () =>
 		constants() !== null && pickedFileSize() !== null ? pickedFileSize()! > constants()!.maxFileSize : false;
@@ -133,35 +146,35 @@ export default function Upload() {
 
 	const tryUpload = () => {
 		setUploadProgress(0.01);
-		const file = selectedFile();
-		if (file) {
-			const xhr = new XMLHttpRequest();
-			xhr.open("POST", "http://localhost:3001/new-task/use-file", true);
-			// xhr.setRequestHeader("Content-Type", "application/octet-stream");
+		let dataToSend: File | URL | null = null;
+		if (selectedFile()) {
+			dataToSend = selectedFile();
+		} else if (isAcceptableAtUrl()?.data?.[0] === "ok") {
+			dataToSend = newUrlOrNull(url());
+		}
 
-			xhr.upload.onprogress = function (e) {
-				if (e.lengthComputable) {
-					const percentCompleted = Math.round((e.loaded * 100) / e.total);
-					setUploadProgress(percentCompleted);
-				}
-			};
-
-			xhr.onload = function () {
-				if (xhr.status === 200) {
-					console.log("Upload successful");
-					navigate("/task/" + xhr.responseText);
-				} else {
+		console.log("tryUpload data", dataToSend);
+		if (dataToSend !== null) {
+			xhrUploadFile(
+				dataToSend,
+				progress => {
+					// preserve the magic value which makes the progress bar show up
+					setUploadProgress(Math.max(progress, 0.01));
+				},
+				(status, responseText) => {
+					if (status === 200) {
+						console.log("Upload successful");
+						navigate("/task/" + responseText);
+					} else {
+						console.log("Upload failed");
+					}
+					setUploadProgress(0);
+				},
+				() => {
 					console.log("Upload failed");
+					setUploadProgress(0);
 				}
-				setUploadProgress(0);
-			};
-
-			xhr.onerror = function () {
-				console.log("Upload failed");
-				setUploadProgress(0);
-			};
-
-			file.arrayBuffer().then(buffer => xhr.send(buffer));
+			);
 		}
 	};
 
@@ -222,7 +235,7 @@ export default function Upload() {
 					<PremiumOnlyOptions signal={[uploadOptions, setUploadOptions]} />
 				</div>
 			</div>
-			<Button disabled={canTryUpload()} variant="accent" onClick={tryUpload}>
+			<Button disabled={!canTryUpload()} variant="accent" onClick={tryUpload}>
 				Upload
 			</Button>
 			<UploadProgressBar progress={uploadProgress()} show={isUploading()} />
@@ -270,11 +283,9 @@ function RegularOptions<
 		minSkipDuration: number;
 	}
 >(props: {signal: Signal<T>; constants: Constants | null}) {
-	const [signal, setSignal] = props.signal;
-
 	const constants = () => props.constants;
-	const silenceCutoffFmt = () => (constants() ? signal().silenceCutoff.toFixed(0) : "...") + "dB";
-	const minSkipDurationFmt = () => (constants() ? signal().minSkipDuration : "...") + "ms";
+	const silenceCutoffFmt = () => (constants() ? props.signal[0]().silenceCutoff.toFixed(0) : "...") + "dB";
+	const minSkipDurationFmt = () => (constants() ? props.signal[0]().minSkipDuration : "...") + "ms";
 
 	return (
 		<>
@@ -290,8 +301,8 @@ function RegularOptions<
 					min={constants()?.silenceCutoff.min ?? -1}
 					max={constants()?.silenceCutoff.max ?? 1}
 					step={0.01}
-					value={constants() ? signal().silenceCutoff : 0}
-					onInput={v => setSignal(prev => ({...prev, silenceCutoff: +v.currentTarget.value}))}
+					value={constants() ? props.signal[0]().silenceCutoff : 0}
+					onInput={v => props.signal[1](prev => ({...prev, silenceCutoff: +v.currentTarget.value}))}
 				>
 					<span class="smaller-letter-spacing">Silence cutoff</span> {silenceCutoffFmt()}{" "}
 				</Slider>
@@ -306,8 +317,8 @@ function RegularOptions<
 					min={constants()?.skipDuration.min ?? -1}
 					max={constants()?.skipDuration.max ?? 1}
 					step={1}
-					value={constants() ? signal().minSkipDuration : 0}
-					onInput={v => setSignal(prev => ({...prev, minSkipDuration: +v.currentTarget.value}))}
+					value={constants() ? props.signal[0]().minSkipDuration : 0}
+					onInput={v => props.signal[1](prev => ({...prev, minSkipDuration: +v.currentTarget.value}))}
 				>
 					<span class="smaller-letter-spacing">Min skip duration</span> {minSkipDurationFmt()}
 				</Slider>
