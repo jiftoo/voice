@@ -70,26 +70,19 @@ fn check_file_size(file_size: usize, is_premium: bool) -> bool {
 
 #[tokio::main]
 async fn main() {
-	let router = Router::new()
-		.route("/check-upload-url", put(check_upload_url))
-		.route("/constants", get(get_constants))
-		.route("/upload-file", post(upload_file))
-		.route("/read-file/:file_id", get(read_file))
-		.layer(tower_http::cors::CorsLayer::permissive())
-		.layer(DefaultBodyLimit::max(MAX_PREMIUM_FILE_SIZE))
-		.layer(tower_http::compression::CompressionLayer::new().br(true))
-		.with_state(voice_shared::debug_remote::file_manager().into());
-	axum::serve(
-		TcpListener::bind((
-			"0.0.0.0",
-			dbg!(var("PORT").map(|x| x.parse().unwrap()).unwrap_or(3002)),
-		))
-		.await
-		.unwrap(),
-		router,
+	voice_shared::axum_serve(
+		Router::new()
+			.route("/check-upload-url", put(check_upload_url))
+			.route("/constants", get(get_constants))
+			.route("/upload-file", post(upload_file))
+			.route("/read-file/:file_id", get(read_file))
+			.layer(tower_http::cors::CorsLayer::permissive())
+			.layer(DefaultBodyLimit::max(MAX_PREMIUM_FILE_SIZE))
+			.layer(tower_http::compression::CompressionLayer::new().br(true))
+			.with_state(voice_shared::debug_remote::file_manager().into()),
+		3002,
 	)
-	.await
-	.unwrap();
+	.await;
 }
 
 #[derive(Deserialize)]

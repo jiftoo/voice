@@ -1,10 +1,26 @@
-pub mod process;
-
 use std::{
 	borrow::Cow,
+	env::var,
 	fmt::{Debug, Display, Formatter},
 	ops::{Deref, DerefMut, Range},
 };
+
+use tokio::net::TcpListener;
+
+/// Start a voice axum server. Parses the PORT environment variable for the port to listen on.
+pub async fn axum_serve(router: axum::Router, default_port: u16) {
+	axum::serve(
+		TcpListener::bind((
+			"0.0.0.0",
+			dbg!(var("PORT").map(|x| x.parse().unwrap()).unwrap_or(default_port)),
+		))
+		.await
+		.unwrap(),
+		router,
+	)
+	.await
+	.unwrap();
+}
 
 pub enum VoiceError {
 	NetworkError,

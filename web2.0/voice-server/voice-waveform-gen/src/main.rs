@@ -21,48 +21,17 @@ use waveform_creator::WaveformCreator;
 
 #[tokio::main]
 async fn main() {
-	// let what = std::fs::read("wave.png").unwrap();
-	// let what = &what;
-	// println!("{}", what.len());
-
-	// let mut to = Command::new("magick");
-	// to.stdin(Stdio::piped())
-	// 	.stdout(Stdio::piped())
-	// 	.stderr(Stdio::inherit())
-	// 	.args(["-", "-trim", "-"]);
-
-	// let mut handle = to.spawn().unwrap();
-	// let mut stdin = handle.stdin.take().unwrap();
-	// // let mut stdout = handle.stdout.take().unwrap();
-
-	// println!("1");
-	// // tokio::time::sleep(Duration::from_secs(1)).await;
-	// // std::thread::sleep(Duration::from_secs(1));
-	// stdin.write_all(what).unwrap();
-	// drop(stdin);
-	// let output = handle.wait_with_output().unwrap();
-	// // let a = handle.stdout.take().unwrap().read_to_end(&mut Vec::new());
-	// // let a = stdout.read_to_end(&mut Vec::new()).unwrap();
-	// println!("2");
-
-	let router = Router::new()
-		// since waveforms are unique resources, it's better to use the path to access them
-		.route("/:file_id", get(get_waveform))
-		.layer(tower_http::cors::CorsLayer::permissive())
-		.with_state(Arc::new(WaveformCreator::new(
-			voice_shared::debug_remote::file_manager(),
-		)));
-	axum::serve(
-		TcpListener::bind((
-			"0.0.0.0",
-			dbg!(var("PORT").map(|x| x.parse().unwrap()).unwrap_or(3003)),
-		))
-		.await
-		.unwrap(),
-		router,
+	voice_shared::axum_serve(
+		Router::new()
+			// since waveforms are unique resources, it's better to use the path to access them
+			.route("/:file_id", get(get_waveform))
+			.layer(tower_http::cors::CorsLayer::permissive())
+			.with_state(Arc::new(WaveformCreator::new(
+				voice_shared::debug_remote::file_manager(),
+			))),
+		3003,
 	)
-	.await
-	.unwrap();
+	.await;
 }
 
 async fn get_waveform<T: RemoteFileManager>(
