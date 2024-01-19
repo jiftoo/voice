@@ -25,8 +25,10 @@ impl<T: RemoteFileManager> WaveformCreator<T> {
 		input_file: &RemoteFileIdentifier,
 	) -> Result<Vec<u8>, RemoteFileManagerError> {
 		println!("get waveform");
-		if let Ok(file) =
-			self.file_manager.get_file(input_file, RemoteFileKind::Waveform(*input_file)).await
+		if let Ok(file) = self
+			.file_manager
+			.get_file(input_file, RemoteFileKind::Waveform(*input_file))
+			.await
 		{
 			println!("waveform already exists");
 			return self.file_manager.load_file(&file).await;
@@ -41,7 +43,10 @@ impl<T: RemoteFileManager> WaveformCreator<T> {
 
 		let waveform_remote_file = self
 			.file_manager
-			.upload_file(&waveform_data, RemoteFileKind::Waveform(*video_file.identifier()))
+			.upload_file(
+				&waveform_data,
+				RemoteFileKind::Waveform(*video_file.identifier()),
+			)
 			.await?;
 		println!("waveform uploaded");
 
@@ -57,23 +62,8 @@ impl<T: RemoteFileManager> WaveformCreator<T> {
 		// magick - -gravity Center -background white -splice 0x1 -
 		// magick - -trim wave.png
 
-		// ffmpeg is smart enough to handle http or file schemas
-		// but not smart enough to follow the standard for file urls
-		// it doesn't understand the forward slashes after the protocol.
-		// ffmpeg is in fact brain damaged
-		let file_url = self.file_manager.file_url(input_file).await;
-		let file_url = if file_url.as_url().scheme() == "file" {
-			if cfg!(windows) {
-				// remove the leading 'aboslute' slash on windows in case there's an aboslute url and it's windows-style absolute
-				// file:///C:/Users
-				//        | this one
-				file_url.as_str().replace("file:///", "file:").replace("file://", "file:")
-			} else {
-				file_url.as_str().replace("file://", "file:")
-			}
-		} else {
-			file_url.as_str().to_string()
-		};
+		let file_url =
+			self.file_manager.file_url(input_file).await.to_string_for_ffmpeg();
 
 		println!("file url: {file_url}");
 
@@ -122,7 +112,6 @@ impl<T: RemoteFileManager> WaveformCreator<T> {
 
 			let magick_draw_line_output =
 				pipe_output(build_magick_draw_line_command(), &ffmpeg_output).await?;
-
 
 			pipe_output(build_magick_trim_command(), &magick_draw_line_output).await?
 		};

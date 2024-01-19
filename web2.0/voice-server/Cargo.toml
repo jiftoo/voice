@@ -1,4 +1,9 @@
 [workspace]
 resolver = "2"
 
-members = ["voice-file-upload", "voice-waveform-gen", "voice-shared"]
+members = [
+	"voice-file-upload",
+	"voice-waveform-gen",
+	"voice-shared",
+	"voice-analyzer",
+]

@@ -3,6 +3,7 @@ import {GLOBAL_STATE} from "./globalState";
 // const BACKEND_URL = "http://localhost:3001/";
 const UPLOAD_BACKEND_URL = "http://localhost:3002/";
 const WAVEFORM_BACKEND_URL = "http://localhost:3003/";
+const ANALYZE_BACKEND_URL = "http://localhost:3004/";
 
 const isPremium = () => GLOBAL_STATE.premium[0]();
 
@@ -42,9 +43,9 @@ export async function checkUploadUrl(url: string): Promise<RestResult<IsUrlAccep
 	const USE_NODE_MOCK = false;
 	const fetchCheckUploadUrl = async () => {
 		if (USE_NODE_MOCK) {
-			return await post("check-upload-url?premium=" + isPremium(), url, "text/plain", false);
+			return await post(UPLOAD_BACKEND_URL, "check-upload-url?premium=" + isPremium(), url, "text/plain", false);
 		} else {
-			return await put("check-upload-url?premium=" + isPremium(), url, "text/plain", false);
+			return await put(UPLOAD_BACKEND_URL, "check-upload-url?premium=" + isPremium(), url, "text/plain", false);
 		}
 	};
 
@@ -119,7 +120,7 @@ export async function checkUploadUrl(url: string): Promise<RestResult<IsUrlAccep
 }
 
 export async function fetchConstants(isPremium: boolean, abortSignal?: AbortSignal): Promise<unknown> {
-	const res = await get("constants?premium=" + isPremium, false, undefined, abortSignal);
+	const res = await get(UPLOAD_BACKEND_URL, "constants?premium=" + isPremium, false, undefined, abortSignal);
 	return await res.json();
 }
 
@@ -154,18 +155,33 @@ export async function xhrUploadFile(
 	}
 }
 
-export function waveformUrl(videoId: string): string {
+export async function fetchSkips(videoId: string): Promise<Array<[number, number]>> {
+	const response = await get(ANALYZE_BACKEND_URL, "analyze/" + videoId, false);
+	return await response.json();
+}
+
+export function getWaveformEndpoint(videoId: string): string {
 	return WAVEFORM_BACKEND_URL + videoId;
 }
 
-export function readFileUrl(videoId: string): string {
+export function getReadFileEndpoint(videoId: string): string {
 	return UPLOAD_BACKEND_URL + "read-file/" + videoId;
+}
+
+export function getAnalyzeEndpoint(videoId: string): string {
+	return ANALYZE_BACKEND_URL + "analyze/" + videoId;
 }
 
 // -------------------------- fetch wrappers --------------------------
 
-function get(path: string, credentials: boolean, headers?: HeadersInit, abortSignal?: AbortSignal): Promise<Response> {
-	return fetch(UPLOAD_BACKEND_URL + path, {
+function get(
+	backendUrl: string,
+	path: string,
+	credentials: boolean,
+	headers?: HeadersInit,
+	abortSignal?: AbortSignal
+): Promise<Response> {
+	return fetch(backendUrl + path, {
 		method: "GET",
 		headers: {
 			...headers
@@ -176,13 +192,14 @@ function get(path: string, credentials: boolean, headers?: HeadersInit, abortSig
 }
 
 function post(
+	backendUrl: string,
 	path: string,
 	body: any,
 	contentType: string,
 	credentials: boolean,
 	headers?: HeadersInit
 ): Promise<Response> {
-	return fetch(UPLOAD_BACKEND_URL + path, {
+	return fetch(backendUrl + path, {
 		method: "POST",
 		headers: {
 			"Content-Type": contentType,
@@ -194,13 +211,14 @@ function post(
 }
 
 function put(
+	backendUrl: string,
 	path: string,
 	body: any,
 	contentType: string,
 	credentials: boolean,
 	headers?: HeadersInit
 ): Promise<Response> {
-	return fetch(UPLOAD_BACKEND_URL + path, {
+	return fetch(backendUrl + path, {
 		method: "PUT",
 		headers: {
 			"Content-Type": contentType,

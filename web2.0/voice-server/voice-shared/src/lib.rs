@@ -9,6 +9,20 @@ use tokio::net::TcpListener;
 
 /// Start a voice axum server. Parses the PORT environment variable for the port to listen on.
 pub async fn axum_serve(router: axum::Router, default_port: u16) {
+	println!(
+		"Launched {:?}",
+		std::env::current_exe()
+			.map(|x| x.file_name().map(|x| x.to_os_string()))
+			.ok()
+			.flatten()
+			.unwrap()
+	);
+
+	// enable shared layers
+	let router = router
+		.layer(tower_http::cors::CorsLayer::permissive())
+		.layer(tower_http::compression::CompressionLayer::new().br(true));
+
 	axum::serve(
 		TcpListener::bind((
 			"0.0.0.0",
@@ -198,6 +212,25 @@ impl FileUrl {
 	pub fn as_url(&self) -> &url::Url {
 		&self.0
 	}
+
+	/// ffmpeg is smart enough to handle http or file schemas
+	/// but not smart enough to follow the standard for file urls
+	/// it doesn't understand the forward slashes after the protocol.
+	/// ffmpeg is in fact brain damaged
+	pub fn to_string_for_ffmpeg(&self) -> String {
+		if self.as_url().scheme() == "file" {
+			if cfg!(windows) {
+				// remove the leading 'aboslute' slash on windows in case there's an aboslute url and it's windows-style absolute
+				// file:///C:/Users
+				//        | this one
+				self.as_str().replace("file:///", "file:").replace("file://", "file:")
+			} else {
+				self.as_str().replace("file://", "file:")
+			}
+		} else {
+			self.as_str().to_string()
+		}
+	}
 }
 
 #[derive(Debug)]
@@ -229,6 +262,7 @@ pub enum RemoteFileKind {
 	VideoInput,
 	// RemoteFileIdentifier identify the parent file
 	VideoOutput(RemoteFileIdentifier),
+	VideoAnalysis(RemoteFileIdentifier),
 	Waveform(RemoteFileIdentifier),
 }
 
@@ -237,6 +271,7 @@ impl RemoteFileKind {
 		match self {
 			Self::VideoInput => "inputs",
 			Self::VideoOutput(_) => "outputs",
+			Self::VideoAnalysis(_) => "analyses",
 			Self::Waveform(_) => "waveforms",
 		}
 	}
@@ -322,9 +357,9 @@ pub mod debug_remote {
 		) -> Result<RemoteFile, RemoteFileManagerError> {
 			// make a new hash or use the same hash as the parent for derived files
 			let hash = match kind {
-				RemoteFileKind::VideoOutput(hash) | RemoteFileKind::Waveform(hash) => {
-					hash
-				}
+				RemoteFileKind::VideoOutput(hash)
+				| RemoteFileKind::Waveform(hash)
+				| RemoteFileKind::VideoAnalysis(hash) => hash,
 				RemoteFileKind::VideoInput => RemoteFileIdentifier::digest(file),
 			};
 

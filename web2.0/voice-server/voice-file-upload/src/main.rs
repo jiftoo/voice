@@ -76,9 +76,7 @@ async fn main() {
 			.route("/constants", get(get_constants))
 			.route("/upload-file", post(upload_file))
 			.route("/read-file/:file_id", get(read_file))
-			.layer(tower_http::cors::CorsLayer::permissive())
 			.layer(DefaultBodyLimit::max(MAX_PREMIUM_FILE_SIZE))
-			.layer(tower_http::compression::CompressionLayer::new().br(true))
 			.with_state(voice_shared::debug_remote::file_manager().into()),
 		3002,
 	)
@@ -300,6 +298,11 @@ async fn check_upload_url_impl(
 		.ok_or(CheckUploadUrlError::TooBig)?;
 
 	Ok(())
+}
+
+async fn query_file_check_service() -> Result<(), (StatusCode, &'static str)> {
+	// TODO: reqwest file checker service
+	todo!()
 }
 
 /// Helper function to load a file from a url

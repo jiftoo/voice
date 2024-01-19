@@ -8,11 +8,13 @@ use tokio::io::AsyncWriteExt;
 
 type VideoPropertyValue = String;
 
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub enum VideoProperty {
 	Supported(VideoPropertyValue),
 	Unsupported(VideoPropertyValue),
 }
 
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct VideoInfo {
 	pub width: u32,
 	pub height: u32,
@@ -22,6 +24,7 @@ pub struct VideoInfo {
 	pub audio_codec: Option<VideoProperty>,
 }
 
+#[derive(Debug)]
 pub enum VideoValidity {
 	Valid(VideoInfo),
 	BadFile,
