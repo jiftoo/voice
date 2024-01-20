@@ -193,6 +193,10 @@ pub trait RemoteFileManager: Sync + Send {
 	/// Callers of this function are to assume that the url always contains a file
 	/// and are to handle the access to the file based on the schema of the url.
 	async fn file_url(&self, file: &RemoteFile) -> FileUrl;
+
+	/// Returs the url of the file which is accessible by the user directly
+	/// useful if the backend is some sort of public hosting
+	async fn public_file_url(&self, file: &RemoteFile) -> Option<FileUrl>;
 }
 
 #[derive(Debug)]
@@ -316,7 +320,7 @@ pub mod debug_remote {
 
 	use super::*;
 
-	pub fn file_manager() -> impl RemoteFileManager {
+	pub async fn file_manager() -> impl RemoteFileManager {
 		debug_remote::DebugRemoteManager::new(
 			"D:\\Coding\\rust\\voice\\web2.0\\voice-server\\debug_bucket",
 		)
@@ -420,48 +424,211 @@ pub mod debug_remote {
 		async fn file_url(&self, file: &RemoteFile) -> FileUrl {
 			FileUrl(url::Url::from_file_path(self.make_file_path(file)).unwrap())
 		}
+
+		async fn public_file_url(&self, file: &RemoteFile) -> Option<FileUrl> {
+			None
+		}
+	}
+}
+
+pub mod yandex_remote {
+	use std::{
+		path::{Path, PathBuf},
+		time::Duration,
+	};
+
+	use super::*;
+	use aws_config::Region;
+	use aws_sdk_s3 as s3;
+	use s3::{config::Credentials, presigning::PresigningConfig};
+
+	#[derive(serde::Deserialize)]
+	struct Config {
+		aws_id: String,
+		aws_secret: String,
+		endpoint_url: String,
+		region: String,
+		bucket_name: String,
 	}
 
-	// impl Voice<Arc<DebugRemoteManager>> for Arc<DebugRemoteManager> {
-	// 	fn upload_file(
-	// 		&self,
-	// 		file: &[u8],
-	// 	) -> impl Future<Output = crate::Result<RemoteFile<Self>>> + Send {
-	// 		RemoteManager::upload_file(self, file)
-	// 	}
+	pub async fn file_manager() -> impl RemoteFileManager {
+		println!("looking for 'config.toml'...");
+		let config: Result<Config, _> = toml::from_str(
+			&std::fs::read_to_string("./config.toml")
+				.or_else(|_| std::fs::read_to_string("../config.toml"))
+				.expect("config.toml is missing!"),
+		);
+		let config = match config {
+			Err(x) => {
+				println!("failed to parse config.toml: {}", x);
+				std::process::exit(1);
+			}
+			Ok(x) => x,
+		};
+		println!("found config.toml");
 
-	// 	fn get_waveform(
-	// 		&self,
-	// 		file: &RemoteFile<Self>,
-	// 	) -> impl Future<Output = crate::Result<RemoteFile<Self>>> + Send {
-	// 		if !matches!(file.kind, RemoteFileKind::VideoInput) {
-	// 			return async move {
-	// 				Err(VoiceError::InvalidFileType {
-	// 					expected: RemoteFileKind::VideoInput,
-	// 					got: file.kind,
-	// 				})
-	// 			};
-	// 		}
-	// 		RemoteManager::load_file(&self, file)
-	// 		async move {
-	// 			file.await
-	// 				.map_err(|_| VoiceError::Internal("failed to write file".into()))?;
-	// 			Ok(RemoteFile::new(Arc::clone(self), RemoteFileKind::Waveform, hash))
-	// 		}
-	// 	}
+		let sdk_config = aws_config::from_env()
+			.endpoint_url(config.endpoint_url)
+			.region(Region::new(config.region))
+			.credentials_provider(Credentials::new(
+				config.aws_id.clone(),
+				config.aws_secret.clone(),
+				None,
+				None,
+				"yandex",
+			))
+			.load()
+			.await;
 
-	// 	fn process_file(
-	// 		&self,
-	// 		file: &RemoteFile<Self>,
-	// 	) -> impl Future<Output = crate::Result<VoiceTask<Self>>> + Send {
-	// 		let hash = Sha256Hash { hash: sha256::digest(file) };
-	// 		let path = self.root.join(&hash.hash);
-	// 		let file = tokio::fs::write(path, file);
-	// 		async move {
-	// 			file.await
-	// 				.map_err(|_| VoiceError::Internal("failed to write file".into()))?;
-	// 			Ok(VoiceTask::new(Arc::clone(self), RemoteFileKind::VideoOutput, hash))
-	// 		}
-	// 	}
-	// }
+		YandexRemoteManager {
+			aws_client: s3::Client::new(&sdk_config),
+			bucket_name: config.bucket_name,
+		}
+	}
+
+	#[derive(Debug)]
+	pub struct YandexRemoteManager {
+		aws_client: s3::Client,
+		bucket_name: String,
+	}
+
+	impl YandexRemoteManager {
+		fn bucket_path(hash: &RemoteFileIdentifier, kind: RemoteFileKind) -> String {
+			format!("{}/{}", hash, kind.as_dir_name())
+		}
+	}
+
+	impl RemoteFile {
+		fn bucket_path(&self) -> String {
+			YandexRemoteManager::bucket_path(self.identifier(), self.kind)
+		}
+	}
+
+	#[async_trait::async_trait]
+	impl RemoteFileManager for YandexRemoteManager {
+		async fn upload_file(
+			&self,
+			file: &[u8],
+			kind: RemoteFileKind,
+		) -> Result<RemoteFile, RemoteFileManagerError> {
+			// make a new hash or use the same hash as the parent for derived files
+			let hash = match kind {
+				RemoteFileKind::VideoOutput(hash)
+				| RemoteFileKind::Waveform(hash)
+				| RemoteFileKind::VideoAnalysis(hash) => hash,
+				RemoteFileKind::VideoInput => RemoteFileIdentifier::digest(file),
+			};
+
+			println!(
+				"uploading file to {}: {}/{}",
+				self.bucket_name,
+				hash,
+				kind.as_dir_name()
+			);
+
+			if let Ok(file) = self.get_file(&hash, kind).await {
+				println!("file already exists");
+				return Ok(file);
+			}
+
+			let remote_file = RemoteFile::new(kind, hash);
+			let path = remote_file.bucket_path();
+
+			self.aws_client
+				.put_object()
+				.bucket(&self.bucket_name)
+				.key(&path)
+				.body(file.to_vec().into())
+				.send()
+				.await
+				.map_err(|x| {
+					println!("failed to upload file: {}", x);
+					RemoteFileManagerError::WriteError
+				})?;
+
+			Ok(remote_file)
+		}
+
+		async fn get_file(
+			&self,
+			name: &RemoteFileIdentifier,
+			kind: RemoteFileKind,
+		) -> Result<RemoteFile, RemoteFileManagerError> {
+			let remote_file = RemoteFile::new(kind, *name);
+			let path = remote_file.bucket_path();
+
+			if let Ok(_) = self
+				.aws_client
+				.head_object()
+				.bucket(&self.bucket_name)
+				.key(&path)
+				.send()
+				.await
+			{
+				Ok(remote_file)
+			} else {
+				Err(RemoteFileManagerError::ReadError)
+			}
+		}
+
+		async fn load_file(
+			&self,
+			file: &RemoteFile,
+		) -> Result<Vec<u8>, RemoteFileManagerError> {
+			let path = file.bucket_path();
+
+			let response = self
+				.aws_client
+				.get_object()
+				.bucket(&self.bucket_name)
+				.key(&path)
+				.send()
+				.await
+				.map_err(|x| {
+					println!("failed to read file: {}", x);
+					RemoteFileManagerError::ReadError
+				})?;
+
+			let bytes = response
+				.body
+				.collect()
+				.await
+				.map(|x| x.to_vec())
+				.map_err(|_| RemoteFileManagerError::ReadError)?;
+
+			Ok(bytes)
+		}
+
+		async fn delete_file(
+			&self,
+			file: &RemoteFile,
+		) -> Result<(), RemoteFileManagerError> {
+			self.aws_client
+				.delete_object()
+				.bucket(&self.bucket_name)
+				.key(&file.bucket_path())
+				.send()
+				.await
+				.map_err(|_| RemoteFileManagerError::ReadError)?;
+
+			Ok(())
+		}
+
+		async fn file_url(&self, file: &RemoteFile) -> FileUrl {
+			self.aws_client
+				.get_object()
+				.bucket(&self.bucket_name)
+				.key(&file.bucket_path())
+				.presigned(
+					PresigningConfig::expires_in(Duration::from_secs(60 * 60)).unwrap(),
+				)
+				.await
+				.map(|x| FileUrl(x.uri().parse().unwrap()))
+				.expect("failed to generate presigned url")
+		}
+
+		async fn public_file_url(&self, file: &RemoteFile) -> Option<FileUrl> {
+			Some(self.file_url(file).await)
+		}
+	}
 }

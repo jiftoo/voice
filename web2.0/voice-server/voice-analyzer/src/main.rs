@@ -19,7 +19,7 @@ async fn main() {
 		Router::new()
 			.route("/file-info", post(get_file_info))
 			.route("/analyze/:file_id", get(analyze_video))
-			.with_state(voice_shared::debug_remote::file_manager().into()),
+			.with_state(voice_shared::yandex_remote::file_manager().await.into()),
 		3004,
 	)
 	.await;

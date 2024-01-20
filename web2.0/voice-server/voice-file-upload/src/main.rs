@@ -9,7 +9,7 @@ use axum::{
 		header::{self},
 		uri, HeaderMap, HeaderName, HeaderValue, StatusCode, Uri,
 	},
-	response::IntoResponse,
+	response::{IntoResponse, Redirect},
 	routing::{get, post, put},
 	Json, Router,
 };
@@ -76,8 +76,9 @@ async fn main() {
 			.route("/constants", get(get_constants))
 			.route("/upload-file", post(upload_file))
 			.route("/read-file/:file_id", get(read_file))
+			.route("/file-url/:file_id", get(get_file_url))
 			.layer(DefaultBodyLimit::max(MAX_PREMIUM_FILE_SIZE))
-			.with_state(voice_shared::debug_remote::file_manager().into()),
+			.with_state(voice_shared::yandex_remote::file_manager().await.into()),
 		3002,
 	)
 	.await;
@@ -371,4 +372,33 @@ async fn read_file<T: RemoteFileManager>(
 	})?;
 
 	Ok(file)
+}
+
+
+// allows the backend to send a hotlink to the file, in case of s3
+// or fallback to downloading and sending it
+async fn get_file_url<T: RemoteFileManager>(
+	State(file_manager): State<Arc<T>>,
+	Path(file_identifier): Path<String>,
+) -> Result<Redirect, StatusCode> {
+	let file_identifier: RemoteFileIdentifier =
+		file_identifier.parse().map_err(|_| {
+			println!("failed to parse file identifier");
+			StatusCode::NOT_FOUND
+		})?;
+
+	let remote_file = file_manager
+		.get_file(&file_identifier, RemoteFileKind::VideoInput)
+		.await
+		.map_err(|_| {
+			println!("failed to get file");
+			StatusCode::NOT_FOUND
+		})?;
+
+	let to = file_manager
+		.public_file_url(&remote_file)
+		.await
+		.map_or_else(|| format!("/read-file/{}", file_identifier), |x| x.to_string());
+
+	Ok(Redirect::to(&to))
 }

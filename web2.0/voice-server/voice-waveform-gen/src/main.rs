@@ -27,7 +27,7 @@ async fn main() {
 			.route("/:file_id", get(get_waveform))
 			.layer(tower_http::cors::CorsLayer::permissive())
 			.with_state(Arc::new(WaveformCreator::new(
-				voice_shared::debug_remote::file_manager(),
+				voice_shared::yandex_remote::file_manager().await,
 			))),
 		3003,
 	)

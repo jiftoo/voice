@@ -165,7 +165,7 @@ export function getWaveformEndpoint(videoId: string): string {
 }
 
 export function getReadFileEndpoint(videoId: string): string {
-	return UPLOAD_BACKEND_URL + "read-file/" + videoId;
+	return UPLOAD_BACKEND_URL + "file-url/" + videoId;
 }
 
 export function getAnalyzeEndpoint(videoId: string): string {
