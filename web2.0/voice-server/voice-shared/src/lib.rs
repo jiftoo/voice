@@ -273,46 +273,12 @@ pub enum RemoteFileKind {
 impl RemoteFileKind {
 	pub fn as_dir_name(&self) -> &'static str {
 		match self {
-			Self::VideoInput => "inputs",
-			Self::VideoOutput(_) => "outputs",
-			Self::VideoAnalysis(_) => "analyses",
-			Self::Waveform(_) => "waveforms",
+			Self::VideoInput => "input",
+			Self::VideoOutput(_) => "output",
+			Self::VideoAnalysis(_) => "analyse",
+			Self::Waveform(_) => "waveform",
 		}
 	}
-}
-
-// public api
-
-pub struct VoiceTaskOptions {
-	denoise: bool,
-	render_to_file: bool,
-	silence_cutoff: i16,
-	min_skip_duration: u16,
-}
-
-pub enum VoiceTaskState {
-	Waiting,
-	Processing,
-	AnalyzedIntervals,
-	EncodingVideo,
-
-	Finished,
-	Error(TaskError),
-}
-
-pub struct TaskError(String);
-
-pub struct VoiceTaskData {
-	audible_intervals: Option<Vec<Range<f32>>>,
-	inaudible_intervals: Option<Vec<Range<f32>>>,
-	video_file: Option<RemoteFile>,
-}
-
-pub struct VoiceTask {
-	input: RemoteFile,
-	options: VoiceTaskOptions,
-	state: VoiceTaskState,
-	data: VoiceTaskData,
 }
 
 pub mod debug_remote {
@@ -346,8 +312,8 @@ pub mod debug_remote {
 		}
 
 		fn make_file_path(&self, file: &RemoteFile) -> PathBuf {
-			let bucket_dir_name: &Path = file.kind.as_dir_name().as_ref();
-			let bucket_path = bucket_dir_name.join(file.name.to_string());
+			let bucket_dir_name: PathBuf = file.identifier().to_string().into();
+			let bucket_path = bucket_dir_name.join(file.kind.as_dir_name());
 			self.root.join(bucket_path)
 		}
 	}
@@ -425,17 +391,14 @@ pub mod debug_remote {
 			FileUrl(url::Url::from_file_path(self.make_file_path(file)).unwrap())
 		}
 
-		async fn public_file_url(&self, file: &RemoteFile) -> Option<FileUrl> {
+		async fn public_file_url(&self, _: &RemoteFile) -> Option<FileUrl> {
 			None
 		}
 	}
 }
 
 pub mod yandex_remote {
-	use std::{
-		path::{Path, PathBuf},
-		time::Duration,
-	};
+	use std::time::Duration;
 
 	use super::*;
 	use aws_config::Region;

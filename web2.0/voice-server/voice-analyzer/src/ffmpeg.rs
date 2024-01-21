@@ -1,12 +1,6 @@
-use std::{
-	fmt::Display, io, ops::Range, path::PathBuf, process::Stdio, sync::Arc,
-	time::Duration,
-};
+use std::{fmt::Display, io, ops::Range, process::Stdio, sync::Arc, time::Duration};
 
-use tokio::{
-	io::AsyncWriteExt,
-	process::{Child, Command},
-};
+use tokio::process::Command;
 
 pub struct FFmpeg {
 	input: String,
@@ -120,7 +114,7 @@ impl FFmpeg {
 	pub async fn analyze_silence(&self) -> Result<VideoAnalysis, FFmpegError> {
 		let mut ffmpeg = self.prepare_command();
 		ffmpeg
-			.arg("-vn")
+			.arg("-vn") // 40x fold speed-up ;)
 			.arg("-hide_banner")
 			.arg("-af")
 			.arg(format!(
