@@ -1,2 +1,5 @@
 **/target
 debug_bucket
+build-config.toml
+__config.toml
+__shared-config.toml

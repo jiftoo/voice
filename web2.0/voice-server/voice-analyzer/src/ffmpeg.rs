@@ -2,12 +2,11 @@ use std::{fmt::Display, io, ops::Range, process::Stdio, sync::Arc, time::Duratio
 
 use tokio::process::Command;
 
+use crate::CONFIG;
+
 pub struct FFmpeg {
 	input: String,
 }
-
-const SILENCEDETECT_NOISE: &str = "-40dB";
-const SILENCEDETECT_DURATION: &str = "0.1";
 
 enum OutputParser {
 	Start,
@@ -113,12 +112,14 @@ impl FFmpeg {
 	/// returns an array of silent periods
 	pub async fn analyze_silence(&self) -> Result<VideoAnalysis, FFmpegError> {
 		let mut ffmpeg = self.prepare_command();
+
 		ffmpeg
 			.arg("-vn") // 40x fold speed-up ;)
 			.arg("-hide_banner")
 			.arg("-af")
 			.arg(format!(
-				"silencedetect=noise={SILENCEDETECT_NOISE}:d={SILENCEDETECT_DURATION},ametadata=mode=print:file=-"
+				"silencedetect=noise={}:d={},ametadata=mode=print:file=-",
+				CONFIG.silencedetect_noise, CONFIG.silencedetect_duration
 			))
 			.arg("-f")
 			.arg("null")

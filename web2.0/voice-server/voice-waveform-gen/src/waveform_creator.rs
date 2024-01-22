@@ -10,6 +10,8 @@ use voice_shared::{
 	RemoteFileManagerError,
 };
 
+use crate::CONFIG;
+
 pub struct WaveformCreator<T: RemoteFileManager> {
 	file_manager: T,
 }
@@ -122,7 +124,8 @@ impl<T: RemoteFileManager> WaveformCreator<T> {
 
 fn build_ffmpeg_command(file_url: &str) -> Command {
 	// pretty much arbitrary
-	const WAVEFORM_DIMENSIONS: &str = "6384x128";
+	// now in build-config.toml
+	// const WAVEFORM_DIMENSIONS: &str = "6384x128";
 
 	let mut command = Command::new("ffmpeg");
 	command
@@ -134,14 +137,14 @@ fn build_ffmpeg_command(file_url: &str) -> Command {
 		.arg("-filter_complex")
 		.arg(format!(
 			"aformat=channel_layouts=mono,showwavespic=s={}:draw=full:colors=#ffffff",
-			WAVEFORM_DIMENSIONS
+			&CONFIG.waveform_dimensions
 		))
 		.args(["-frames:v", "1", "-c:v", "png", "-f", "image2pipe", "-"]);
 	command
 }
 
 fn build_magick_draw_line_command() -> Command {
-	let mut command = Command::new("magick");
+	let mut command = Command::new("convert");
 	command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).args([
 		"png:-",
 		"-gravity",
@@ -156,7 +159,7 @@ fn build_magick_draw_line_command() -> Command {
 }
 
 fn build_magick_trim_command() -> Command {
-	let mut command = Command::new("magick");
+	let mut command = Command::new("convert");
 	command
 		.stdin(Stdio::piped())
 		.stdout(Stdio::piped())

@@ -1,1 +1,1 @@
-ffmpeg -i mit.webm -filter_complex "aformat=channel_layouts=mono,showwavespic=s=6384x128:draw=full:colors=#ffffff" -frames:v 1 -c:v png -f image2pipe - | magick - -gravity Center -background white -splice 0x1 - | magick - -trim wave.png
+ffmpeg -i mit.webm -filter_complex "aformat=channel_layouts=mono,showwavespic=s=6384x128:draw=full:colors=#ffffff" -frames:v 1 -c:v png -f image2pipe - | convert - -gravity Center -background white -splice 0x1 - | convert - -trim wave.png

@@ -1,3 +1,8 @@
+#![forbid(unused_crate_dependencies)]
+#![allow(clippy::option_env_unwrap)]
+
+include!("../../include/builder_comperr.rs");
+
 use std::{borrow::Cow, ops::Range, sync::Arc};
 
 use axum::{
@@ -8,13 +13,25 @@ use axum::{
 	Json, Router,
 };
 use serde::{ser::SerializeSeq, Deserialize};
-use voice_shared::{RemoteFileIdentifier, RemoteFileKind, RemoteFileManager};
+use tokio::sync::OnceCell;
+use voice_shared::{
+	cell_deref::OnceCellDeref, RemoteFileIdentifier, RemoteFileKind, RemoteFileManager,
+};
 
 mod analyze;
 mod ffmpeg;
 
+pub static CONFIG: OnceCellDeref<voice_shared::config::VoiceAnalyzerConfig> =
+	OnceCellDeref::const_new();
+
 #[tokio::main]
 async fn main() {
+	CONFIG
+		.get_or_init(|| async {
+			toml::from_str(&std::fs::read_to_string("./config.toml").unwrap()).unwrap()
+		})
+		.await;
+
 	voice_shared::axum_serve(
 		Router::new()
 			.route("/file-info", post(get_file_info))

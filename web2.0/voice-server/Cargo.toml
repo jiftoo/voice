@@ -6,4 +6,10 @@ members = [
 	"voice-waveform-gen",
 	"voice-shared",
 	"voice-analyzer",
+	"builder",
 ]
+
+# faster build times
+[profile.release.package.voice-analyzer]
+opt-level = 0
+debug = false

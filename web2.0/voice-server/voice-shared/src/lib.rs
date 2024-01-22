@@ -1,8 +1,17 @@
+// #![forbid(unused_crate_dependencies)]
+#![allow(clippy::option_env_unwrap)]
+
+pub mod cell_deref;
+
+include!("../../include/builder_comperr.rs");
+
+pub use builder::config;
+
 use std::{
 	borrow::Cow,
 	env::var,
 	fmt::{Debug, Display, Formatter},
-	ops::{Deref, DerefMut, Range},
+	ops::{Deref, DerefMut},
 };
 
 use tokio::net::TcpListener;
@@ -400,42 +409,30 @@ pub mod debug_remote {
 pub mod yandex_remote {
 	use std::time::Duration;
 
+	use self::cell_deref::OnceCellDeref;
+
 	use super::*;
 	use aws_config::Region;
 	use aws_sdk_s3 as s3;
 	use s3::{config::Credentials, presigning::PresigningConfig};
 
-	#[derive(serde::Deserialize)]
-	struct Config {
-		aws_id: String,
-		aws_secret: String,
-		endpoint_url: String,
-		region: String,
-		bucket_name: String,
-	}
+	static CONFIG: OnceCellDeref<crate::config::VoiceSharedConfig> =
+		OnceCellDeref::const_new();
 
 	pub async fn file_manager() -> impl RemoteFileManager {
-		println!("looking for 'config.toml'...");
-		let config: Result<Config, _> = toml::from_str(
-			&std::fs::read_to_string("./config.toml")
-				.or_else(|_| std::fs::read_to_string("../config.toml"))
-				.expect("config.toml is missing!"),
-		);
-		let config = match config {
-			Err(x) => {
-				println!("failed to parse config.toml: {}", x);
-				std::process::exit(1);
-			}
-			Ok(x) => x,
-		};
-		println!("found config.toml");
+		CONFIG
+			.get_or_init(|| async {
+				toml::from_str(&std::fs::read_to_string("./shared-config.toml").unwrap())
+					.unwrap()
+			})
+			.await;
 
 		let sdk_config = aws_config::from_env()
-			.endpoint_url(config.endpoint_url)
-			.region(Region::new(config.region))
+			.endpoint_url(CONFIG.endpoint_url.clone())
+			.region(Region::new(CONFIG.region.clone()))
 			.credentials_provider(Credentials::new(
-				config.aws_id.clone(),
-				config.aws_secret.clone(),
+				CONFIG.aws_id.clone(),
+				CONFIG.aws_secret.clone(),
 				None,
 				None,
 				"yandex",
@@ -445,7 +442,7 @@ pub mod yandex_remote {
 
 		YandexRemoteManager {
 			aws_client: s3::Client::new(&sdk_config),
-			bucket_name: config.bucket_name,
+			bucket_name: CONFIG.bucket_name.clone(),
 		}
 	}
 

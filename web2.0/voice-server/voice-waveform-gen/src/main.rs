@@ -1,3 +1,8 @@
+#![forbid(unused_crate_dependencies)]
+#![allow(clippy::option_env_unwrap)]
+
+include!("../../include/builder_comperr.rs");
+
 mod waveform_creator;
 
 use std::{
@@ -16,11 +21,23 @@ use axum::{
 	Router,
 };
 use tokio::{io::AsyncWriteExt, net::TcpListener};
-use voice_shared::{RemoteFileIdentifier, RemoteFileManager, RemoteFileManagerError};
+use voice_shared::{
+	cell_deref::OnceCellDeref, RemoteFileIdentifier, RemoteFileManager,
+	RemoteFileManagerError,
+};
 use waveform_creator::WaveformCreator;
+
+pub static CONFIG: OnceCellDeref<voice_shared::config::VoiceWaveformGenConfig> =
+	OnceCellDeref::const_new();
 
 #[tokio::main]
 async fn main() {
+	CONFIG
+		.get_or_init(|| async {
+			toml::from_str(&std::fs::read_to_string("./config.toml").unwrap()).unwrap()
+		})
+		.await;
+
 	voice_shared::axum_serve(
 		Router::new()
 			// since waveforms are unique resources, it's better to use the path to access them

@@ -1,4 +1,8 @@
+#![allow(clippy::option_env_unwrap)]
+
 mod util;
+
+include!("../../include/builder_comperr.rs");
 
 use std::{borrow::Cow, env::var, ops::Deref, sync::Arc, time::Duration};
 
@@ -18,7 +22,9 @@ use serde::Deserialize;
 use tap::{Pipe, Tap};
 use tokio::{net::TcpListener, process::Command, sync::OnceCell};
 
-use voice_shared::{RemoteFileIdentifier, RemoteFileKind, RemoteFileManager};
+use voice_shared::{
+	cell_deref::OnceCellDeref, RemoteFileIdentifier, RemoteFileKind, RemoteFileManager,
+};
 
 use crate::util::BooleanOption;
 
@@ -39,7 +45,7 @@ impl ReqwestSingleton {
 					"voice-file-upload".parse().unwrap(),
 				);
 				let client = reqwest::Client::builder()
-					.connect_timeout(REQWEST_CONNECT_TIMEOUT)
+					.connect_timeout(CONFIG.reqwest_connect_timeout)
 					.default_headers(headers)
 					.build();
 				client.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
@@ -54,22 +60,25 @@ impl ReqwestSingleton {
 // reqwest client singleton
 static REQWEST_CLIENT: ReqwestSingleton = ReqwestSingleton::new();
 
-// the server is not worth our time if it's a slowpoke
-const REQWEST_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
-
-const MAX_FREE_FILE_SIZE: usize = 1024 * 1024 * 100; // 100MB
-const MAX_PREMIUM_FILE_SIZE: usize = 1024 * 1024 * 1000; // 1GB
-
 fn check_file_size(file_size: usize, is_premium: bool) -> bool {
 	if is_premium {
-		file_size <= MAX_PREMIUM_FILE_SIZE
+		file_size <= CONFIG.max_premium_file_size
 	} else {
-		file_size <= MAX_FREE_FILE_SIZE
+		file_size <= CONFIG.max_free_file_size
 	}
 }
 
+static CONFIG: OnceCellDeref<voice_shared::config::VoiceFileUploadConfig> =
+	OnceCellDeref::const_new();
+
 #[tokio::main]
 async fn main() {
+	CONFIG
+		.get_or_init(|| async {
+			toml::from_str(&std::fs::read_to_string("./config.toml").unwrap()).unwrap()
+		})
+		.await;
+
 	voice_shared::axum_serve(
 		Router::new()
 			.route("/check-upload-url", put(check_upload_url))
@@ -77,7 +86,7 @@ async fn main() {
 			.route("/upload-file", post(upload_file))
 			.route("/read-file/:file_id", get(read_file))
 			.route("/file-url/:file_id", get(get_file_url))
-			.layer(DefaultBodyLimit::max(MAX_PREMIUM_FILE_SIZE))
+			.layer(DefaultBodyLimit::max(CONFIG.max_premium_file_size))
 			.with_state(voice_shared::yandex_remote::file_manager().await.into()),
 		3002,
 	)
@@ -92,21 +101,16 @@ struct IsPremiumQuery {
 async fn get_constants(
 	Query(IsPremiumQuery { premium }): Query<IsPremiumQuery>,
 ) -> ([(HeaderName, &'static str); 1], Json<serde_json::Value>) {
-	// let mut headers = HeaderMap::new();
-	// headers.insert("Cache-Control", "no-cache".parse().unwrap());
-	const SILENCE_CUTOFF: (i32, i32) = (-90, -10);
-	const SKIP_DURATION: (i32, i32) = (100, 250);
-
 	let json = serde_json::json!({
 		"silenceCutoff": {
-			"min": SILENCE_CUTOFF.0,
-			"max": SILENCE_CUTOFF.1,
+			"min": CONFIG.silence_cutoff.0,
+			"max": CONFIG.silence_cutoff.1,
 		},
 		"skipDuration": {
-			"min": SKIP_DURATION.0,
-			"max": SKIP_DURATION.1,
+			"min": CONFIG.skip_duration.0,
+			"max": CONFIG.skip_duration.1,
 		},
-		"maxFileSize": if premium { MAX_PREMIUM_FILE_SIZE } else { MAX_FREE_FILE_SIZE },
+		"maxFileSize": if premium { CONFIG.max_premium_file_size } else { CONFIG.max_free_file_size },
 	});
 
 	([(header::CACHE_CONTROL, "no-cache")], Json(json))
@@ -373,7 +377,6 @@ async fn read_file<T: RemoteFileManager>(
 
 	Ok(file)
 }
-
 
 // allows the backend to send a hotlink to the file, in case of s3
 // or fallback to downloading and sending it

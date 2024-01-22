@@ -1,0 +1,28 @@
+FROM rust:1.75 as chef
+	RUN cargo install cargo-chef
+	RUN rustup target add x86_64-unknown-linux-musl
+	RUN apt update && \
+		apt install -y musl ffmpeg mold imagemagick && \
+		rm -rf /var/lib/apt/lists/*
+
+	WORKDIR /build
+	COPY . .
+
+FROM chef as analyzer-planner
+	WORKDIR /build/voice-analyzer
+	RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef as analyzer-builder
+	COPY --from=planner /build/voice-analyzer/recipe.json recipe.json
+	ENV RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-fuse-ld=mold"
+	RUN cargo chef cook --release --target x86_64-unknown-linux-musl --recipe-path recipe.json
+	COPY . .
+	RUN cargo build --release --target x86_64-unknown-linux-musl --bin application
+
+FROM scratch as voice-analyzer
+	COPY --from=builder /build/voice-analyzer/target/x86_64-unknown-linux-musl/release/application /application
+	COPY --from=builder /usr/bin/ffmpeg /usr/bin/ffmpeg
+	# COPY --from=builder /usr/bin/magick /usr/bin/magick
+	CMD ["/application"]
+
+FROM scratch as dummy
