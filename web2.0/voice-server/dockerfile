@@ -20,9 +20,9 @@ FROM chef as builder
 	RUN cargo build --release --target x86_64-unknown-linux-musl
 
 FROM scratch as voice-base
-	COPY --from=builder /build/voice-analyzer/target/x86_64-unknown-linux-musl/release/voice-analyzer /voice-analyzer
-	COPY --from=builder /build/voice-server/target/x86_64-unknown-linux-musl/release/voice-file-upload /voice-file-upload
-	COPY --from=builder /build/voice-processor/target/x86_64-unknown-linux-musl/release/voice-waveform-gen /voice-waveform-gen
+	COPY --from=builder /build/voice/target/x86_64-unknown-linux-musl/release/voice-analyzer /voice-analyzer
+	COPY --from=builder /build/voice/target/x86_64-unknown-linux-musl/release/voice-file-upload /voice-file-upload
+	COPY --from=builder /build/voice/target/x86_64-unknown-linux-musl/release/voice-waveform-gen /voice-waveform-gen
 	COPY --from=builder /usr/bin/ffmpeg /usr/bin/ffmpeg
 	COPY --from=builder /usr/bin/magick /usr/bin/magick
 
