@@ -1,6 +1,3 @@
-use axum::http::Uri;
-use serde::{Deserialize, Deserializer};
-
 pub trait BooleanOption: Into<bool> + Sized {
 	/// utility function to interop booleans and options
 	/// equivalent to `(self).then_some( () )`.

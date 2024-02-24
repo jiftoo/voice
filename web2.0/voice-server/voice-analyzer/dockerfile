@@ -14,7 +14,7 @@ FROM chef as analyzer-planner
 
 FROM chef as analyzer-builder
 	COPY --from=planner /build/voice-analyzer/recipe.json recipe.json
-	ENV RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-fuse-ld=mold"
+	ENV RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-fuse-ld=mold --cfg=____builder"
 	RUN cargo chef cook --release --target x86_64-unknown-linux-musl --recipe-path recipe.json
 	COPY . .
 	RUN cargo build --release --target x86_64-unknown-linux-musl --bin application

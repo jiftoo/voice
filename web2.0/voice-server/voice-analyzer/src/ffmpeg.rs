@@ -32,9 +32,7 @@ impl OutputParser {
 				),
 				None,
 			)),
-			OutputParser::Duration(start, end) => {
-				Ok((OutputParser::Start, Some(start..end)))
-			}
+			OutputParser::Duration(start, end) => Ok((OutputParser::Start, Some(start..end))),
 		}
 	}
 
@@ -142,10 +140,8 @@ impl FFmpeg {
 			// coded in epic hurry
 			let str = "Duration: ";
 			let i = stderr_text.find(str).unwrap();
-			let split =
-				stderr_text.split_at(i + str.len()).1.split_once(',').unwrap().0.trim();
-			let split =
-				split.split(':').map(|x| x.parse::<f32>().unwrap()).collect::<Vec<_>>();
+			let split = stderr_text.split_at(i + str.len()).1.split_once(',').unwrap().0.trim();
+			let split = split.split(':').map(|x| x.parse::<f32>().unwrap()).collect::<Vec<_>>();
 			Duration::from_secs_f32(split[0] * 3600.0 + split[1] * 60.0 + split[2])
 		};
 

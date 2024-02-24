@@ -3,7 +3,7 @@
 
 include!("../../include/builder_comperr.rs");
 
-use std::{borrow::Cow, ops::Range, sync::Arc};
+use std::{ops::Range, sync::Arc};
 
 use axum::{
 	body::Bytes,
@@ -13,7 +13,7 @@ use axum::{
 	Json, Router,
 };
 use serde::{ser::SerializeSeq, Deserialize};
-use tokio::sync::OnceCell;
+
 use voice_shared::{
 	cell_deref::OnceCellDeref, RemoteFileIdentifier, RemoteFileKind, RemoteFileManager,
 };
@@ -83,11 +83,10 @@ async fn analyze_video<T: RemoteFileManager>(
 	State(file_manager): State<Arc<T>>,
 	// manually send a json and set headers to 'application/json'
 ) -> Result<(HeaderMap, Vec<u8>), StatusCode> {
-	let file_identifier: RemoteFileIdentifier =
-		file_identifier.parse().map_err(|_| {
-			println!("failed to parse file identifier");
-			StatusCode::NOT_FOUND
-		})?;
+	let file_identifier: RemoteFileIdentifier = file_identifier.parse().map_err(|_| {
+		println!("failed to parse file identifier");
+		StatusCode::NOT_FOUND
+	})?;
 
 	let mut headers = HeaderMap::new();
 	headers.insert("Content-Type", "application/json".parse().unwrap());
@@ -120,14 +119,10 @@ async fn analyze_video<T: RemoteFileManager>(
 		})?;
 
 	// new backend "skips" the provided fragments
-	let skips_json =
-		serde_json::to_string(&RangerSerializer(analysis.inaudible)).unwrap();
+	let skips_json = serde_json::to_string(&RangerSerializer(analysis.inaudible)).unwrap();
 
 	file_manager
-		.upload_file(
-			skips_json.as_bytes(),
-			RemoteFileKind::VideoAnalysis(*input_file.identifier()),
-		)
+		.upload_file(skips_json.as_bytes(), RemoteFileKind::VideoAnalysis(*input_file.identifier()))
 		.await
 		.map_err(|_| {
 			println!("failed to save skips");

@@ -1,14 +1,12 @@
 use std::{
-	convert::Infallible,
 	ffi::OsStr,
 	fmt::Display,
 	process::{Command, Stdio},
-	str::FromStr,
 };
 
 use serde::{
 	de::{Error, Unexpected},
-	Deserialize, Deserializer, Serialize,
+	Deserialize, Serialize,
 };
 
 #[derive(Serialize, Deserialize, Default)]
@@ -118,9 +116,8 @@ impl<'de> Deserialize<'de> for MinRam {
 	{
 		let x = u16::deserialize(deserializer)?;
 		let y = format!("{:?}", 128..=4096);
-		Self::new(x).map_err(|_| {
-			D::Error::invalid_value(Unexpected::Unsigned(x.into()), &y.as_str())
-		})
+		Self::new(x)
+			.map_err(|_| D::Error::invalid_value(Unexpected::Unsigned(x.into()), &y.as_str()))
 	}
 }
 
@@ -150,9 +147,8 @@ impl<'de> Deserialize<'de> for Concurrency {
 	{
 		let x = u8::deserialize(deserializer)?;
 		let y = format!("{:?}", 1..=16);
-		Self::new(x).map_err(|_| {
-			D::Error::invalid_value(Unexpected::Unsigned(x.into()), &y.as_str())
-		})
+		Self::new(x)
+			.map_err(|_| D::Error::invalid_value(Unexpected::Unsigned(x.into()), &y.as_str()))
 	}
 }
 
@@ -291,8 +287,7 @@ impl Yc {
 	}
 
 	fn folder_id(&self) -> Result<String, YcError> {
-		let x =
-			invoke_yc(["resource", "folder", "get", "--name", &self.0.yc_folder_name])?;
+		let x = invoke_yc(["resource", "folder", "get", "--name", &self.0.yc_folder_name])?;
 		Ok(x.get("id")
 			.ok_or("'id' not present")
 			.map_err(YcError::unspecified)?
@@ -312,9 +307,7 @@ impl Yc {
 				&self.0.service_account.name,
 			]) {
 				Err(x) => match x.kind {
-					YcErrorKind::ResourceMissing
-						if self.0.service_account.create_if_not_exists =>
-					{
+					YcErrorKind::ResourceMissing if self.0.service_account.create_if_not_exists => {
 						if abort {
 							println!("Service account creation failed.");
 							return Err(x);
@@ -383,8 +376,7 @@ impl Yc {
 	}
 
 	fn create_bucket(&self) -> Result<(), YcError> {
-		match self.invoke_yc_in_folder(["storage", "bucket", "get", &self.0.bucket.name])
-		{
+		match self.invoke_yc_in_folder(["storage", "bucket", "get", &self.0.bucket.name]) {
 			Err(x) => match x.kind {
 				YcErrorKind::ResourceMissing if self.0.bucket.create_if_not_exists => {
 					self.invoke_yc_in_folder([
@@ -426,9 +418,7 @@ impl Yc {
 			&self.0.container_registry.name,
 		]) {
 			Err(x) => match x.kind {
-				YcErrorKind::ResourceMissing
-					if self.0.container_registry.create_if_not_exists =>
-				{
+				YcErrorKind::ResourceMissing if self.0.container_registry.create_if_not_exists => {
 					let x = self.invoke_yc_in_folder([
 						"container",
 						"registry",
@@ -464,8 +454,7 @@ impl Yc {
 			});
 		}
 
-		let tag =
-			format!("cr.yandex/{}/{}:latest", container_registry_id, existing_image_name);
+		let tag = format!("cr.yandex/{}/{}:latest", container_registry_id, existing_image_name);
 		invoke("docker", ["tag", existing_image_name, &tag])?;
 		invoke("docker", ["push", &tag])?;
 

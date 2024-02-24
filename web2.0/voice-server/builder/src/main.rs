@@ -44,9 +44,7 @@ impl Default for Configs {
 				max_premium_file_size: 350 * 1024 * 1024,
 				reqwest_connect_timeout: Default::default(),
 			},
-			voice_waveform_gen: VoiceWaveformGenConfig {
-				waveform_dimensions: "6384x128".into(),
-			},
+			voice_waveform_gen: VoiceWaveformGenConfig { waveform_dimensions: "6384x128".into() },
 			voice_analyzer: VoiceAnalyzerConfig {
 				silencedetect_noise: "-40dB".into(),
 				silencedetect_duration: "0.1".into(),
@@ -143,7 +141,7 @@ fn main() {
 	let _ = Cleanup;
 
 	println!("I'm the builder!");
-	
+
 	println!("Looking for '{}'...", BUILD_CONFIG_FILE);
 	let Ok(build_config) = std::fs::read_to_string(BUILD_CONFIG_FILE) else {
 		println!("Couldn't find '{}'.", BUILD_CONFIG_FILE);
@@ -222,11 +220,8 @@ fn main() {
 
 	println!("Starting build.");
 
-	std::fs::write(
-		TEMP_SHARED_CONFIG,
-		toml::to_string(&build_config.config.voice_shared).unwrap(),
-	)
-	.unwrap();
+	std::fs::write(TEMP_SHARED_CONFIG, toml::to_string(&build_config.config.voice_shared).unwrap())
+		.unwrap();
 
 	build_docker_image(
 		VOICE_ANALYZER_CONTAINER_NAME,
@@ -234,11 +229,7 @@ fn main() {
 			config: toml::to_string(&build_config.config.voice_analyzer).unwrap(),
 			deps: &["ffmpeg"],
 			copy: &[("/usr/bin/ffmpeg", "/usr/bin/ffmpeg")],
-			project_name: Path::new(VOICE_ANALYZER_DIR)
-				.file_name()
-				.unwrap()
-				.to_str()
-				.unwrap(),
+			project_name: Path::new(VOICE_ANALYZER_DIR).file_name().unwrap().to_str().unwrap(),
 		},
 	);
 
@@ -248,11 +239,7 @@ fn main() {
 			config: toml::to_string(&build_config.config.voice_file_upload).unwrap(),
 			deps: &[],
 			copy: &[],
-			project_name: Path::new(VOICE_FILE_UPLOAD_DIR)
-				.file_name()
-				.unwrap()
-				.to_str()
-				.unwrap(),
+			project_name: Path::new(VOICE_FILE_UPLOAD_DIR).file_name().unwrap().to_str().unwrap(),
 		},
 	);
 
@@ -265,11 +252,7 @@ fn main() {
 				("/usr/bin/ffmpeg", "/usr/bin/ffmpeg"),
 				("/usr/bin/convert", "/usr/bin/convert"),
 			],
-			project_name: Path::new(VOICE_WAVEFORM_GEN_DIR)
-				.file_name()
-				.unwrap()
-				.to_str()
-				.unwrap(),
+			project_name: Path::new(VOICE_WAVEFORM_GEN_DIR).file_name().unwrap().to_str().unwrap(),
 		},
 	);
 
@@ -330,13 +313,8 @@ fn check_valid_workspace() -> bool {
 		}
 	};
 
-	const NECESSARY_MEMBERS: &[&str] = &[
-		"voice-file-upload",
-		"voice-waveform-gen",
-		"voice-shared",
-		"voice-analyzer",
-		"builder",
-	];
+	const NECESSARY_MEMBERS: &[&str] =
+		&["voice-file-upload", "voice-waveform-gen", "voice-shared", "voice-analyzer", "builder"];
 
 	let mut a = NECESSARY_MEMBERS.to_vec();
 	a.sort();
@@ -355,9 +333,8 @@ fn check_docker() -> bool {
 fn check_yandex_cli() -> bool {
 	let output = std::process::Command::new("yc").arg("config").arg("list").output();
 	let is_ok = output.as_ref().is_ok_and(|x| x.status.success());
-	let check_result = output.is_ok_and(|x| {
-		String::from_utf8_lossy(&x.stdout).to_lowercase().contains("cloud-id:")
-	});
+	let check_result = output
+		.is_ok_and(|x| String::from_utf8_lossy(&x.stdout).to_lowercase().contains("cloud-id:"));
 	if !check_result && is_ok {
 		println!("yc check failed but the command exited successfully.");
 	}

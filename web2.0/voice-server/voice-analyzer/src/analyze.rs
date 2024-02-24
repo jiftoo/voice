@@ -48,11 +48,7 @@ impl Bounds {
 	pub fn normal() -> Self {
 		Self {
 			supported_audio_codecs: HashSet::from_iter(["aac".into(), "opus".into()]),
-			supported_video_codecs: HashSet::from_iter([
-				"h264".into(),
-				"vp8".into(),
-				"vp9".into(),
-			]),
+			supported_video_codecs: HashSet::from_iter(["h264".into(), "vp8".into(), "vp9".into()]),
 			supported_containers: HashSet::from_iter(["mp4".into(), "webm".into()]),
 			max_resolution: (1920, 1080),
 			min_resolution: (256, 144),
@@ -65,10 +61,7 @@ impl Bounds {
 	}
 }
 
-pub async fn get_video_info(
-	data: &[u8],
-	bounds: Bounds,
-) -> anyhow::Result<VideoValidity> {
+pub async fn get_video_info(data: &[u8], bounds: Bounds) -> anyhow::Result<VideoValidity> {
 	let mut child = tokio::process::Command::new("ffprobe")
 		.args([
 			"-loglevel",
@@ -97,15 +90,14 @@ pub async fn get_video_info(
 		.await
 		.map_err(|e| anyhow::anyhow!("failed to wait for ffprobe: {}", e))?;
 
-	let mut codecs: (Option<VideoPropertyValue>, Option<VideoPropertyValue>) =
-		(None, None);
+	let mut codecs: (Option<VideoPropertyValue>, Option<VideoPropertyValue>) = (None, None);
 	let mut container = None;
 	let mut width = None;
 	let mut height = None;
 	let mut frame_rate = None;
 
 	// check if the file has (one video stream ∨ one audio stream)
-	for line in output.stdout.lines().flatten() {
+	for line in output.stdout.lines().map_while(|x| x.ok()) {
 		match line {
 			line if line.starts_with("stream") => {
 				let mut x = line.split(',').skip(1);
@@ -121,22 +113,16 @@ pub async fn get_video_info(
 						width = lwidth.map(str::to_string);
 						height = lheight.map(str::to_string);
 						let (n, d) = lframe_rate.unwrap().split_once('/').unwrap();
-						frame_rate =
-							Some(n.parse::<f32>().unwrap() / d.parse::<f32>().unwrap());
+						frame_rate = Some(n.parse::<f32>().unwrap() / d.parse::<f32>().unwrap());
 					}
 					"audio" if codecs.1.is_none() => codecs.1 = Some(codec_name.into()),
-					"video" if codecs.0.is_some() => {
-						return Ok(VideoValidity::TooManyStreams)
-					}
-					"audio" if codecs.1.is_some() => {
-						return Ok(VideoValidity::TooManyStreams)
-					}
+					"video" if codecs.0.is_some() => return Ok(VideoValidity::TooManyStreams),
+					"audio" if codecs.1.is_some() => return Ok(VideoValidity::TooManyStreams),
 					_ => {}
 				}
 			}
 			line if line.starts_with("format") => {
-				container =
-					Some(line.split(',').nth(1).unwrap().replace('\"', ""));
+				container = Some(line.split(',').nth(1).unwrap().replace('\"', ""));
 			}
 			_ => unreachable!("ffprobe output is malformed"),
 		}
@@ -151,14 +137,10 @@ pub async fn get_video_info(
 
 	// check if codecs are supported
 	let mut invalid_codecs = Vec::new();
-	if let Some(invalid) =
-		codecs.0.as_ref().and_then(|vc| bounds.supported_video_codecs.get(vc))
-	{
+	if let Some(invalid) = codecs.0.as_ref().and_then(|vc| bounds.supported_video_codecs.get(vc)) {
 		invalid_codecs.push(invalid.clone());
 	}
-	if let Some(invalid) =
-		codecs.1.as_ref().and_then(|ac| bounds.supported_audio_codecs.get(ac))
-	{
+	if let Some(invalid) = codecs.1.as_ref().and_then(|ac| bounds.supported_audio_codecs.get(ac)) {
 		invalid_codecs.push(invalid.clone());
 	}
 	if !invalid_codecs.is_empty() {

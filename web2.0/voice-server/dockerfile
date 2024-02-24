@@ -8,21 +8,33 @@ FROM rust:1.75 as chef
 	WORKDIR /build
 	COPY . .
 
-FROM chef as analyzer-planner
-	WORKDIR /build/voice-analyzer
+FROM chef as planner
+	WORKDIR /build/voice
 	RUN cargo chef prepare --recipe-path recipe.json
 
-FROM chef as analyzer-builder
-	COPY --from=planner /build/voice-analyzer/recipe.json recipe.json
+FROM chef as builder
+	COPY --from=planner /build/voice/recipe.json recipe.json
 	ENV RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-fuse-ld=mold"
 	RUN cargo chef cook --release --target x86_64-unknown-linux-musl --recipe-path recipe.json
 	COPY . .
-	RUN cargo build --release --target x86_64-unknown-linux-musl --bin application
+	RUN cargo build --release --target x86_64-unknown-linux-musl
 
-FROM scratch as voice-analyzer
-	COPY --from=builder /build/voice-analyzer/target/x86_64-unknown-linux-musl/release/application /application
+FROM scratch as voice-base
+	COPY --from=builder /build/voice-analyzer/target/x86_64-unknown-linux-musl/release/voice-analyzer /voice-analyzer
+	COPY --from=builder /build/voice-server/target/x86_64-unknown-linux-musl/release/voice-file-upload /voice-file-upload
+	COPY --from=builder /build/voice-processor/target/x86_64-unknown-linux-musl/release/voice-waveform-gen /voice-waveform-gen
 	COPY --from=builder /usr/bin/ffmpeg /usr/bin/ffmpeg
-	# COPY --from=builder /usr/bin/magick /usr/bin/magick
-	CMD ["/application"]
+	COPY --from=builder /usr/bin/magick /usr/bin/magick
 
+# Targets
+FROM voice-base as voice-analyzer
+	CMD ["/voice-analyzer"]
+
+FROM voice-base as voice-file-upload
+	CMD ["/voice-file-upload"]
+
+FROM voice-base as voice-waveform-gen
+	CMD ["/voice-waveform-gen"]
+
+# Prevent building without --target specified
 FROM scratch as dummy

@@ -4,23 +4,22 @@ mod util;
 
 include!("../../include/builder_comperr.rs");
 
-use std::{borrow::Cow, env::var, ops::Deref, sync::Arc, time::Duration};
+use std::{borrow::Cow, sync::Arc};
 
 use axum::{
 	body::Bytes,
 	extract::{DefaultBodyLimit, Path, Query, State},
 	http::{
 		header::{self},
-		uri, HeaderMap, HeaderName, HeaderValue, StatusCode, Uri,
+		uri, HeaderMap, HeaderName, StatusCode, Uri,
 	},
-	response::{IntoResponse, Redirect},
+	response::Redirect,
 	routing::{get, post, put},
 	Json, Router,
 };
 
 use serde::Deserialize;
 use tap::{Pipe, Tap};
-use tokio::{net::TcpListener, process::Command, sync::OnceCell};
 
 use voice_shared::{
 	cell_deref::OnceCellDeref, RemoteFileIdentifier, RemoteFileKind, RemoteFileManager,
@@ -40,10 +39,7 @@ impl ReqwestSingleton {
 			.0
 			.get_or_try_init(|| async {
 				let mut headers = reqwest::header::HeaderMap::new();
-				headers.insert(
-					reqwest::header::USER_AGENT,
-					"voice-file-upload".parse().unwrap(),
-				);
+				headers.insert(reqwest::header::USER_AGENT, "voice-file-upload".parse().unwrap());
 				let client = reqwest::Client::builder()
 					.connect_timeout(CONFIG.reqwest_connect_timeout)
 					.default_headers(headers)
@@ -161,9 +157,7 @@ async fn upload_file<T: RemoteFileManager>(
 		body.len(),
 		headers.get("x-premium").is_some()
 	);
-	let Some(content_type) =
-		headers.get(header::CONTENT_TYPE).and_then(|x| x.to_str().ok())
-	else {
+	let Some(content_type) = headers.get(header::CONTENT_TYPE).and_then(|x| x.to_str().ok()) else {
 		return Err((StatusCode::BAD_REQUEST, "content-type header is required"));
 	};
 
@@ -180,43 +174,40 @@ async fn upload_file<T: RemoteFileManager>(
 			if let Some(true) =
 				uri.scheme().map(|x| x == &uri::Scheme::HTTP || x == &uri::Scheme::HTTPS)
 			{
-				load_file_from_url(uri, is_premium).await.map_err(|_| {
-					(StatusCode::UNPROCESSABLE_ENTITY, "error when reaching url")
-				})?
+				load_file_from_url(uri, is_premium)
+					.await
+					.map_err(|_| (StatusCode::UNPROCESSABLE_ENTITY, "error when reaching url"))?
 			} else {
-				return Err((
-					StatusCode::BAD_REQUEST,
-					"scheme should be 'http' or 'https'",
-				));
+				return Err((StatusCode::BAD_REQUEST, "scheme should be 'http' or 'https'"));
 			}
 		}
-		_ => return Err((
-			StatusCode::BAD_REQUEST,
-			"content type should be either 'application/octet-stream' or 'text/x-url'",
-		)),
+		_ => {
+			return Err((
+				StatusCode::BAD_REQUEST,
+				"content type should be either 'application/octet-stream' or 'text/x-url'",
+			))
+		}
 	};
 
 	// file should be valid at this point
 
-	let remote_file = file_manager
-		.upload_file(&file, RemoteFileKind::VideoInput)
-		.await
-		.map_err(|x| match x {
-		voice_shared::RemoteFileManagerError::WriteError => {
-			(StatusCode::INTERNAL_SERVER_ERROR, "failed to write file")
-		}
-		voice_shared::RemoteFileManagerError::ReadError => {
-			(StatusCode::INTERNAL_SERVER_ERROR, "failed to read file")
-		}
-		voice_shared::RemoteFileManagerError::Unspecified(x) => {
-			println!("unspecified error: {:?}", x);
-			(StatusCode::INTERNAL_SERVER_ERROR, "unknown error")
-		}
-		voice_shared::RemoteFileManagerError::ChildError(x) => {
-			println!("child process error: {:?}", x);
-			(StatusCode::INTERNAL_SERVER_ERROR, "unknown error")
-		}
-	})?;
+	let remote_file =
+		file_manager.upload_file(&file, RemoteFileKind::VideoInput).await.map_err(|x| match x {
+			voice_shared::RemoteFileManagerError::WriteError => {
+				(StatusCode::INTERNAL_SERVER_ERROR, "failed to write file")
+			}
+			voice_shared::RemoteFileManagerError::ReadError => {
+				(StatusCode::INTERNAL_SERVER_ERROR, "failed to read file")
+			}
+			voice_shared::RemoteFileManagerError::Unspecified(x) => {
+				println!("unspecified error: {:?}", x);
+				(StatusCode::INTERNAL_SERVER_ERROR, "unknown error")
+			}
+			voice_shared::RemoteFileManagerError::ChildError(x) => {
+				println!("child process error: {:?}", x);
+				(StatusCode::INTERNAL_SERVER_ERROR, "unknown error")
+			}
+		})?;
 
 	println!("uploaded file: {:?}", remote_file);
 
@@ -250,9 +241,7 @@ impl CheckUploadUrlError {
 			CheckUploadUrlError::Unreachable => "url is not reachable",
 			CheckUploadUrlError::RequestError => "url returned an error",
 			CheckUploadUrlError::NotVideo => "url does not point to a video",
-			CheckUploadUrlError::NoContentLength => {
-				"HEAD does not return a content length"
-			}
+			CheckUploadUrlError::NoContentLength => "HEAD does not return a content length",
 			CheckUploadUrlError::TooBig => "video is too big",
 		}
 	}
@@ -333,8 +322,7 @@ async fn load_file_from_url(url: Uri, is_premium: bool) -> Result<Vec<u8>, Statu
 	if !res.status().is_success() {
 		return Err(CheckUploadUrlError::RequestError.status_code());
 	}
-	let body =
-		res.bytes().await.map_err(|_| CheckUploadUrlError::RequestError.status_code())?;
+	let body = res.bytes().await.map_err(|_| CheckUploadUrlError::RequestError.status_code())?;
 	Ok(body.into())
 }
 
@@ -344,11 +332,10 @@ async fn read_file<T: RemoteFileManager>(
 ) -> Result<Vec<u8>, (StatusCode, Cow<'static, str>)> {
 	const EMPTY_COW: Cow<'static, str> = Cow::Borrowed("");
 
-	let file_identifier: RemoteFileIdentifier =
-		file_identifier.parse().map_err(|_| {
-			println!("failed to parse file identifier");
-			(StatusCode::NOT_FOUND, EMPTY_COW)
-		})?;
+	let file_identifier: RemoteFileIdentifier = file_identifier.parse().map_err(|_| {
+		println!("failed to parse file identifier");
+		(StatusCode::NOT_FOUND, EMPTY_COW)
+	})?;
 
 	let remote_file = file_manager
 		.get_file(&file_identifier, RemoteFileKind::VideoInput)
@@ -384,11 +371,10 @@ async fn get_file_url<T: RemoteFileManager>(
 	State(file_manager): State<Arc<T>>,
 	Path(file_identifier): Path<String>,
 ) -> Result<Redirect, StatusCode> {
-	let file_identifier: RemoteFileIdentifier =
-		file_identifier.parse().map_err(|_| {
-			println!("failed to parse file identifier");
-			StatusCode::NOT_FOUND
-		})?;
+	let file_identifier: RemoteFileIdentifier = file_identifier.parse().map_err(|_| {
+		println!("failed to parse file identifier");
+		StatusCode::NOT_FOUND
+	})?;
 
 	let remote_file = file_manager
 		.get_file(&file_identifier, RemoteFileKind::VideoInput)

@@ -5,25 +5,17 @@ include!("../../include/builder_comperr.rs");
 
 mod waveform_creator;
 
-use std::{
-	env::var,
-	io::{Read, Write},
-	process::{Command, Stdio},
-	sync::Arc,
-	time::Duration,
-};
+use std::sync::Arc;
 
 use axum::{
-	extract::{Path, Query, State},
+	extract::{Path, State},
 	http::{HeaderMap, StatusCode},
-	response::Redirect,
 	routing::get,
 	Router,
 };
-use tokio::{io::AsyncWriteExt, net::TcpListener};
+
 use voice_shared::{
-	cell_deref::OnceCellDeref, RemoteFileIdentifier, RemoteFileManager,
-	RemoteFileManagerError,
+	cell_deref::OnceCellDeref, RemoteFileIdentifier, RemoteFileManager, RemoteFileManagerError,
 };
 use waveform_creator::WaveformCreator;
 
@@ -56,11 +48,10 @@ async fn get_waveform<T: RemoteFileManager>(
 	Path(file_identifier): Path<String>,
 ) -> Result<(HeaderMap, Vec<u8>), StatusCode> {
 	println!("get waveform route");
-	let file_identifier: RemoteFileIdentifier =
-		file_identifier.parse().map_err(|_| {
-			println!("failed to parse file identifier");
-			StatusCode::NOT_FOUND
-		})?;
+	let file_identifier: RemoteFileIdentifier = file_identifier.parse().map_err(|_| {
+		println!("failed to parse file identifier");
+		StatusCode::NOT_FOUND
+	})?;
 
 	// get_waveform already checks if the file identifier is a `RemoteFileKind::Waveform`
 	let res = waveform_creator.get_waveform(&file_identifier).await;
@@ -72,10 +63,7 @@ async fn get_waveform<T: RemoteFileManager>(
 			let mut headers = HeaderMap::new();
 			headers.insert("Content-Disposition", "inline".parse().unwrap());
 			headers.insert("Content-Type", "image/png".parse().unwrap());
-			headers.insert(
-				"Cache-Control",
-				"public, max-age=31536000, immutable".parse().unwrap(),
-			);
+			headers.insert("Cache-Control", "public, max-age=31536000, immutable".parse().unwrap());
 			Ok((headers, bytes))
 		}
 		Err(RemoteFileManagerError::ReadError) => Err(StatusCode::NOT_FOUND),

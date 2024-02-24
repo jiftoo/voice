@@ -1,13 +1,9 @@
-use std::io::Read;
 use std::io::Write;
 use std::process::Command;
 use std::process::Stdio;
-use std::time::Duration;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use voice_shared::{
-	FileUrl, RemoteFile, RemoteFileIdentifier, RemoteFileKind, RemoteFileManager,
-	RemoteFileManagerError,
+	RemoteFile, RemoteFileIdentifier, RemoteFileKind, RemoteFileManager, RemoteFileManagerError,
 };
 
 use crate::CONFIG;
@@ -27,17 +23,14 @@ impl<T: RemoteFileManager> WaveformCreator<T> {
 		input_file: &RemoteFileIdentifier,
 	) -> Result<Vec<u8>, RemoteFileManagerError> {
 		println!("get waveform");
-		if let Ok(file) = self
-			.file_manager
-			.get_file(input_file, RemoteFileKind::Waveform(*input_file))
-			.await
+		if let Ok(file) =
+			self.file_manager.get_file(input_file, RemoteFileKind::Waveform(*input_file)).await
 		{
 			println!("waveform already exists");
 			return self.file_manager.load_file(&file).await;
 		}
 
-		let video_file =
-			self.file_manager.get_file(input_file, RemoteFileKind::VideoInput).await?;
+		let video_file = self.file_manager.get_file(input_file, RemoteFileKind::VideoInput).await?;
 		println!("video file found");
 
 		let waveform_data = self.generate_waveform(&video_file).await?;
@@ -45,10 +38,7 @@ impl<T: RemoteFileManager> WaveformCreator<T> {
 
 		let waveform_remote_file = self
 			.file_manager
-			.upload_file(
-				&waveform_data,
-				RemoteFileKind::Waveform(*video_file.identifier()),
-			)
+			.upload_file(&waveform_data, RemoteFileKind::Waveform(*video_file.identifier()))
 			.await?;
 		println!("waveform uploaded");
 
@@ -64,8 +54,7 @@ impl<T: RemoteFileManager> WaveformCreator<T> {
 		// magick - -gravity Center -background white -splice 0x1 -
 		// magick - -trim wave.png
 
-		let file_url =
-			self.file_manager.file_url(input_file).await.to_string_for_ffmpeg();
+		let file_url = self.file_manager.file_url(input_file).await.to_string_for_ffmpeg();
 
 		println!("file url: {file_url}");
 
@@ -91,24 +80,19 @@ impl<T: RemoteFileManager> WaveformCreator<T> {
 				Ok(output.stdout)
 			} else {
 				println!("command failed: {:?}", String::from_utf8_lossy(&output.stderr));
-				Err(RemoteFileManagerError::ChildError(
-					"Failed to execute command".into(),
-				))
+				Err(RemoteFileManagerError::ChildError("Failed to execute command".into()))
 			}
 		}
 
 		// i like blocks
 		let waveform_png = {
 			println!("executing ffmpeg");
-			let ffmpeg_output = build_ffmpeg_command(file_url.as_str())
-				.output()
-				.map_err(make_child_error)?;
+			let ffmpeg_output =
+				build_ffmpeg_command(file_url.as_str()).output().map_err(make_child_error)?;
 			let stderr = String::from_utf8_lossy(&ffmpeg_output.stderr);
 			if !ffmpeg_output.status.success() {
 				println!("ffmpeg stderr: {stderr}");
-				return Err(RemoteFileManagerError::ChildError(
-					"Failed to execute command".into(),
-				));
+				return Err(RemoteFileManagerError::ChildError("Failed to execute command".into()));
 			}
 			let ffmpeg_output = ffmpeg_output.stdout;
 
