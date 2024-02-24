@@ -143,6 +143,7 @@ fn main() {
 	let _ = Cleanup;
 
 	println!("I'm the builder!");
+	
 	println!("Looking for '{}'...", BUILD_CONFIG_FILE);
 	let Ok(build_config) = std::fs::read_to_string(BUILD_CONFIG_FILE) else {
 		println!("Couldn't find '{}'.", BUILD_CONFIG_FILE);
