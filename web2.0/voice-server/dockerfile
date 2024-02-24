@@ -13,7 +13,6 @@ FROM chef as planner
 	RUN cargo chef prepare --recipe-path recipe.json
 
 FROM planner as builder
-	COPY --from=planner /build/voice/recipe.json recipe.json
 	ENV RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-fuse-ld=mold"
 	RUN cargo chef cook --release --target x86_64-unknown-linux-musl --recipe-path recipe.json
 	COPY . .
