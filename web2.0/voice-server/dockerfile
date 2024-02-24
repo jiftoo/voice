@@ -9,7 +9,7 @@ FROM rust:1.75 as chef
 	COPY . .
 
 FROM chef as planner
-	WORKDIR /build/voice
+	WORKDIR /build
 	RUN cargo chef prepare --recipe-path recipe.json
 
 FROM planner as builder
