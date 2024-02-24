@@ -2,8 +2,13 @@ FROM rust:1.75 as chef
 	RUN cargo install cargo-chef
 	RUN rustup target add x86_64-unknown-linux-gnu
 	RUN apt update && \
-		apt install -y ffmpeg mold imagemagick && \
+		apt install -y cmake libaom-dev ffmpeg mold && \
+		apt remove -y imagemagick && \
 		rm -rf /var/lib/apt/lists/*
+
+	RUN git clone https://github.com/SoftCreatR/imei
+	WORKDIR /imei
+	RUN ./imei.sh
 
 	WORKDIR /build
 	COPY . .
@@ -12,27 +17,31 @@ FROM chef as planner
 	WORKDIR /build
 	RUN cargo chef prepare --recipe-path recipe.json
 
-FROM planner as builder
+FROM chef as builder
+	COPY --from=planner /build/recipe.json recipe.json
 	ENV RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-fuse-ld=mold"
 	RUN cargo chef cook --release --target x86_64-unknown-linux-gnu --recipe-path recipe.json
 	COPY . .
 	RUN cargo build --release --target x86_64-unknown-linux-gnu
 
-FROM scratch as voice-base
-	COPY --from=builder /build/voice/target/x86_64-unknown-linux-gnu/release/voice-analyzer /voice-analyzer
-	COPY --from=builder /build/voice/target/x86_64-unknown-linux-gnu/release/voice-file-upload /voice-file-upload
-	COPY --from=builder /build/voice/target/x86_64-unknown-linux-gnu/release/voice-waveform-gen /voice-waveform-gen
-	COPY --from=builder /usr/bin/ffmpeg /usr/bin/ffmpeg
-	COPY --from=builder /usr/bin/magick /usr/bin/magick
-
 # Targets
-FROM voice-base as voice-analyzer
+# I'm too lazy to check which one need ffmpeg and magick and which don't.
+FROM scratch as voice-analyzer
+	COPY --from=builder /build/target/x86_64-unknown-linux-gnu/release/voice-analyzer /voice-analyzer
+	COPY --from=builder /usr/bin/ffmpeg /usr/bin/ffmpeg
+	COPY --from=builder /usr/local/bin/magick /usr/bin/magick
 	CMD ["/voice-analyzer"]
 
-FROM voice-base as voice-file-upload
+FROM scratch as voice-file-upload
+	COPY --from=builder /build/target/x86_64-unknown-linux-gnu/release/voice-file-upload /voice-file-upload
+	COPY --from=builder /usr/bin/ffmpeg /usr/bin/ffmpeg
+	COPY --from=builder /usr/local/bin/magick /usr/bin/magick
 	CMD ["/voice-file-upload"]
 
-FROM voice-base as voice-waveform-gen
+FROM scratch as voice-waveform-gen
+	COPY --from=builder /build/target/x86_64-unknown-linux-gnu/release/voice-waveform-gen /voice-waveform-gen
+	COPY --from=builder /usr/bin/ffmpeg /usr/bin/ffmpeg
+	COPY --from=builder /usr/local/bin/magick /usr/bin/magick
 	CMD ["/voice-waveform-gen"]
 
 # Prevent building without --target specified
