@@ -250,38 +250,38 @@ impl Yc {
 		println!("Configuring docker");
 		self.configure_docker()?;
 		// create the serverless services
-		println!("Creating serverless services");
-		let service_account_id = self
-			.invoke_yc_in_folder([
-				"iam",
-				"service-account",
-				"get",
-				"--name",
-				&self.0.service_account.name,
-			])?
-			.get("id")
-			.unwrap()
-			.as_str()
-			.unwrap()
-			.to_owned();
-		self.create_and_push_serverless_service(
-			&registry_id,
-			crate::VOICE_ANALYZER_CONTAINER_NAME,
-			&self.0.serverless.voice_analyzer,
-			&service_account_id,
-		)?;
-		self.create_and_push_serverless_service(
-			&registry_id,
-			crate::VOICE_FILE_UPLOAD_CONTAINER_NAME,
-			&self.0.serverless.voice_file_upload,
-			&service_account_id,
-		)?;
-		self.create_and_push_serverless_service(
-			&registry_id,
-			crate::VOICE_WAVEFORM_GEN_CONTAINER_NAME,
-			&self.0.serverless.voice_waveform_gen,
-			&service_account_id,
-		)?;
+		// println!("Creating serverless services");
+		// let service_account_id = self
+		// 	.invoke_yc_in_folder([
+		// 		"iam",
+		// 		"service-account",
+		// 		"get",
+		// 		"--name",
+		// 		&self.0.service_account.name,
+		// 	])?
+		// 	.get("id")
+		// 	.unwrap()
+		// 	.as_str()
+		// 	.unwrap()
+		// 	.to_owned();
+		// self.create_and_push_serverless_service(
+		// 	&registry_id,
+		// 	crate::VOICE_ANALYZER_CONTAINER_NAME,
+		// 	&self.0.serverless.voice_analyzer,
+		// 	&service_account_id,
+		// )?;
+		// self.create_and_push_serverless_service(
+		// 	&registry_id,
+		// 	crate::VOICE_FILE_UPLOAD_CONTAINER_NAME,
+		// 	&self.0.serverless.voice_file_upload,
+		// 	&service_account_id,
+		// )?;
+		// self.create_and_push_serverless_service(
+		// 	&registry_id,
+		// 	crate::VOICE_WAVEFORM_GEN_CONTAINER_NAME,
+		// 	&self.0.serverless.voice_waveform_gen,
+		// 	&service_account_id,
+		// )?;
 
 		Ok(())
 	}

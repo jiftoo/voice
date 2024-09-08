@@ -66,6 +66,8 @@ FROM rust:1.75 as prepare
 		apt install -y --no-install-recommends mold ca-certificates %deps% && \
 		rm -rf /var/lib/apt/lists/*
 
+	%additional%
+
 	WORKDIR /build
 
 FROM prepare as builder
@@ -91,6 +93,7 @@ builder/src/main.rs
 struct DockerfileTemplate(String);
 struct DockerfileTemplateBuilder {
 	deps: &'static [&'static str],
+	additional: &'static [&'static str],
 	project_name: &'static str,
 	copy: &'static [(&'static str, &'static str)],
 	config: String,
@@ -100,6 +103,7 @@ impl DockerfileTemplateBuilder {
 	fn build(self) -> DockerfileTemplate {
 		let mut dockerfile = DOCKERFILE_TEMPLATE.to_string();
 		dockerfile = dockerfile.replace("%deps%", &self.deps.join(" "));
+		dockerfile = dockerfile.replace("%additional%", &self.additional.join("\n"));
 		dockerfile = dockerfile.replace("%project_name%", self.project_name);
 		dockerfile = dockerfile.replace(
 			"%copy%",
@@ -137,6 +141,8 @@ impl Drop for Cleanup {
 }
 
 fn main() {
+	let t1 = std::time::Instant::now();
+
 	// RAII cleanup
 	let _ = Cleanup;
 
@@ -228,6 +234,7 @@ fn main() {
 		DockerfileTemplateBuilder {
 			config: toml::to_string(&build_config.config.voice_analyzer).unwrap(),
 			deps: &["ffmpeg"],
+			additional: &[],
 			copy: &[("/usr/bin/ffmpeg", "/usr/bin/ffmpeg")],
 			project_name: Path::new(VOICE_ANALYZER_DIR).file_name().unwrap().to_str().unwrap(),
 		},
@@ -238,6 +245,7 @@ fn main() {
 		DockerfileTemplateBuilder {
 			config: toml::to_string(&build_config.config.voice_file_upload).unwrap(),
 			deps: &[],
+			additional: &[],
 			copy: &[],
 			project_name: Path::new(VOICE_FILE_UPLOAD_DIR).file_name().unwrap().to_str().unwrap(),
 		},
@@ -247,7 +255,13 @@ fn main() {
 		VOICE_WAVEFORM_GEN_CONTAINER_NAME,
 		DockerfileTemplateBuilder {
 			config: toml::to_string(&build_config.config.voice_waveform_gen).unwrap(),
-			deps: &["ffmpeg", "imagemagick"],
+			deps: &["ffmpeg", "cmake"],
+			additional: &[
+				"RUN apt remove imagemagick -y --purge",
+				"RUN git clone https://github.com/SoftCreatR/imei",
+				"WORKDIR /imei",
+				"RUN ./imei.sh",
+			],
 			copy: &[
 				("/usr/bin/ffmpeg", "/usr/bin/ffmpeg"),
 				("/usr/bin/convert", "/usr/bin/convert"),
@@ -271,7 +285,7 @@ fn main() {
 	}
 
 	println!("////////////////////////////");
-	println!("Finished!");
+	println!("Finished in {:?}!", t1.elapsed());
 }
 
 fn build_docker_image(name: &str, dockerfile: DockerfileTemplateBuilder) {
