@@ -6,9 +6,9 @@ use voice_shared::{
 	RemoteFile, RemoteFileIdentifier, RemoteFileKind, RemoteFileManager, RemoteFileManagerError,
 };
 
-use crate::CONFIG;
+use crate::Config;
 
-pub struct WaveformCreator<T: RemoteFileManager> {
+pub struct WaveformCreator<T: RemoteFileManager + Sync> {
 	file_manager: T,
 }
 
@@ -21,6 +21,7 @@ impl<T: RemoteFileManager> WaveformCreator<T> {
 	pub async fn get_waveform(
 		&self,
 		input_file: &RemoteFileIdentifier,
+		config: &Config,
 	) -> Result<Vec<u8>, RemoteFileManagerError> {
 		println!("get waveform");
 		if let Ok(file) =
@@ -30,10 +31,11 @@ impl<T: RemoteFileManager> WaveformCreator<T> {
 			return self.file_manager.load_file(&file).await;
 		}
 
-		let video_file = self.file_manager.get_file(input_file, RemoteFileKind::VideoInput).await?;
+		let video_file =
+			self.file_manager.get_file(input_file, RemoteFileKind::VideoInput(*input_file)).await?;
 		println!("video file found");
 
-		let waveform_data = self.generate_waveform(&video_file).await?;
+		let waveform_data = self.generate_waveform(&video_file, config).await?;
 		println!("waveform generated {}", waveform_data.len());
 
 		let waveform_remote_file = self
@@ -49,6 +51,7 @@ impl<T: RemoteFileManager> WaveformCreator<T> {
 	async fn generate_waveform(
 		&self,
 		input_file: &RemoteFile,
+		config: &Config,
 	) -> Result<Vec<u8>, RemoteFileManagerError> {
 		// ffmpeg -i mit.webm -filter_complex "aformat=channel_layouts=mono,showwavespic=s=6384x128:draw=full:colors=#ffffff" -frames:v 1 -c:v png -f image2pipe -
 		// magick - -gravity Center -background white -splice 0x1 -
@@ -87,8 +90,9 @@ impl<T: RemoteFileManager> WaveformCreator<T> {
 		// i like blocks
 		let waveform_png = {
 			println!("executing ffmpeg");
-			let ffmpeg_output =
-				build_ffmpeg_command(file_url.as_str()).output().map_err(make_child_error)?;
+			let ffmpeg_output = build_ffmpeg_command(file_url.as_str(), config)
+				.output()
+				.map_err(make_child_error)?;
 			let stderr = String::from_utf8_lossy(&ffmpeg_output.stderr);
 			if !ffmpeg_output.status.success() {
 				println!("ffmpeg stderr: {stderr}");
@@ -106,9 +110,8 @@ impl<T: RemoteFileManager> WaveformCreator<T> {
 	}
 }
 
-fn build_ffmpeg_command(file_url: &str) -> Command {
+fn build_ffmpeg_command(file_url: &str, config: &Config) -> Command {
 	// pretty much arbitrary
-	// now in build-config.toml
 	// const WAVEFORM_DIMENSIONS: &str = "6384x128";
 
 	let mut command = Command::new("ffmpeg");
@@ -121,7 +124,7 @@ fn build_ffmpeg_command(file_url: &str) -> Command {
 		.arg("-filter_complex")
 		.arg(format!(
 			"aformat=channel_layouts=mono,showwavespic=s={}:draw=full:colors=#ffffff",
-			&CONFIG.waveform_dimensions
+			&config.waveform_dimensions
 		))
 		.args(["-frames:v", "1", "-c:v", "png", "-f", "image2pipe", "-"]);
 	command

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			li {
+				font-family: monospace;
+				white-space: pre-wrap;
+			}
+		</style>
+	</head>
+	<body>
+		<button id="run-tests">Run tests</button>
+		<ul id="log"></ul>
+
+		<script>
+			const log = (...data) => {
+				console.log(...data);
+
+				const logUl = document.getElementById("log");
+				const logLi = document.createElement("li");
+				logLi.innerText = JSON.stringify(data);
+				logUl.appendChild(logLi);
+			};
+
+			async function runTests() {
+				log("running tests");
+
+				const rootResponse = await fetch("https://bba1rl7g84tdqpqgb68g.containers.yandexcloud.net/").then((v) => v.text());
+				log("rootResponse", rootResponse);
+
+				const testResponse = await fetch("https://bba1rl7g84tdqpqgb68g.containers.yandexcloud.net/test").then((v) => v.text());
+				log("testResponse", testResponse);
+
+				const ws = new WebSocket("wss://bba1rl7g84tdqpqgb68g.containers.yandexcloud.net/test");
+				ws.onmessage = (mes) => {
+					log(mes, mes.data.size);
+					if (mes.data instanceof Blob) {
+						log("echoing data back", mes.data.size);
+						ws.send(mes.data);
+					}
+				};
+			}
+
+			document.getElementById("run-tests").addEventListener("click", async () => {
+				try {
+					await runTests();
+				} catch (ex) {
+					log("exception", ex.toString());
+				}
+			});
+		</script>
+	</body>
+</html>

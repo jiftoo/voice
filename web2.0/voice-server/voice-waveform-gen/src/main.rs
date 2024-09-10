@@ -1,11 +1,9 @@
-#![forbid(unused_crate_dependencies)]
+// #![forbid(unused_crate_dependencies)]
 #![allow(clippy::option_env_unwrap)]
-
-include!("../../include/builder_comperr.rs");
 
 mod waveform_creator;
 
-use std::sync::Arc;
+use std::{ops::Deref, sync::Arc};
 
 use axum::{
 	extract::{Path, State},
@@ -14,37 +12,67 @@ use axum::{
 	Router,
 };
 
-use voice_shared::{
-	cell_deref::OnceCellDeref, RemoteFileIdentifier, RemoteFileManager, RemoteFileManagerError,
-};
+use voice_shared::{RemoteFileIdentifier, RemoteFileManager, RemoteFileManagerError};
 use waveform_creator::WaveformCreator;
 
-pub static CONFIG: OnceCellDeref<voice_shared::config::VoiceWaveformGenConfig> =
-	OnceCellDeref::const_new();
+pub struct Config {
+	pub bucket_mount: String,
+	pub waveform_dimensions: String,
+}
 
-#[tokio::main]
+struct AppState<T: RemoteFileManager> {
+	inner: Arc<Inner<T>>,
+}
+
+struct Inner<T: RemoteFileManager> {
+	config: Config,
+	creator: WaveformCreator<T>,
+}
+
+impl<T: RemoteFileManager> Clone for AppState<T> {
+	fn clone(&self) -> Self {
+		Self { inner: self.inner.clone() }
+	}
+}
+
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
-	CONFIG
-		.get_or_init(|| async {
-			toml::from_str(&std::fs::read_to_string("./config.toml").unwrap()).unwrap()
-		})
-		.await;
+	let config = Config {
+		bucket_mount: std::env::var("BUCKET").expect("BUCKET environment variable to be set"),
+		waveform_dimensions: {
+			let dim = std::env::var("WAVEFORM_DIMENSIONS")
+				.expect("WAVEFORM_DIMENSIONS environment variable to be set");
+			let split: [&str; 2] = dim
+				.split('x')
+				.collect::<Vec<_>>()
+				.try_into()
+				.unwrap_or_else(|_| panic!("WAVEFORM_DIMENSIONS to be an AAAAxBBBB: {dim}"));
+			if !split.into_iter().all(|x| x.parse::<u32>().is_ok()) {
+				panic!("WAVEFORM_DIMENSIONS is malformed: {dim}")
+			}
+
+			dim
+		},
+	};
+
+	let creator = WaveformCreator::new(
+		voice_shared::yandex_mount_remote::file_manager(config.bucket_mount.clone()).await,
+	);
+
+	let state = AppState { inner: Arc::new(Inner { config, creator }) };
 
 	voice_shared::axum_serve(
+		// since waveforms are unique resources, it's better to use the path to access them
 		Router::new()
-			// since waveforms are unique resources, it's better to use the path to access them
 			.route("/:file_id", get(get_waveform))
 			.layer(tower_http::cors::CorsLayer::permissive())
-			.with_state(Arc::new(WaveformCreator::new(
-				voice_shared::yandex_remote::file_manager().await,
-			))),
-		3003,
+			.with_state(state),
 	)
 	.await;
 }
 
 async fn get_waveform<T: RemoteFileManager>(
-	State(waveform_creator): State<Arc<WaveformCreator<T>>>,
+	State(app): State<AppState<T>>,
 	Path(file_identifier): Path<String>,
 ) -> Result<(HeaderMap, Vec<u8>), StatusCode> {
 	println!("get waveform route");
@@ -54,19 +82,20 @@ async fn get_waveform<T: RemoteFileManager>(
 	})?;
 
 	// get_waveform already checks if the file identifier is a `RemoteFileKind::Waveform`
-	let res = waveform_creator.get_waveform(&file_identifier).await;
-	println!("res: {:?}", res.as_ref().map(|x| x.len()));
+	let res = app.inner.creator.get_waveform(&file_identifier, &app.inner.config).await;
+	// println!("res: {:?}", res.as_ref().map(|x| x.len()));
 
-	match res {
-		// Ok(remote_file) => Ok(Redirect::to(remote_file.as_str())),
-		Ok(bytes) => {
-			let mut headers = HeaderMap::new();
-			headers.insert("Content-Disposition", "inline".parse().unwrap());
-			headers.insert("Content-Type", "image/png".parse().unwrap());
-			headers.insert("Cache-Control", "public, max-age=31536000, immutable".parse().unwrap());
-			Ok((headers, bytes))
-		}
-		Err(RemoteFileManagerError::ReadError) => Err(StatusCode::NOT_FOUND),
-		Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
-	}
+	// match res {
+	// 	// Ok(remote_file) => Ok(Redirect::to(remote_file.as_str())),
+	// 	Ok(bytes) => {
+	// 		let mut headers = HeaderMap::new();
+	// 		headers.insert("Content-Disposition", "inline".parse().unwrap());
+	// 		headers.insert("Content-Type", "image/png".parse().unwrap());
+	// 		headers.insert("Cache-Control", "public, max-age=31536000, immutable".parse().unwrap());
+	// 		Ok((headers, bytes))
+	// 	}
+	// 	Err(RemoteFileManagerError::ReadError) => Err(StatusCode::NOT_FOUND),
+	// 	Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+	// }
+	todo!()
 }

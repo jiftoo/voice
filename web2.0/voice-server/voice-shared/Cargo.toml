@@ -6,15 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-axum = { version = "0.7.4" }
-async-trait = "0.1.77"
 hex = "0.4.3"
-serde = { version = "1.0.194", features = ["derive"] }
-sha256 = "1.4.0"
-tokio = { version = "1.35.1", features = ["full"] }
-url = "2.5.0"
-tower-http = { version = "0.5.0", features = ["cors", "compression-br"] }
-toml = "0.8.8"
-aws-sdk-s3 = "1.12.0"
-aws-config = { version = "1.1.2", features = ["behavior-version-latest"] }
-builder = { path = "../builder" }
+axum = "0.7.5"
+url = "2.5.2"
+tokio = { version = "1.40.0", features = ["rt", "macros", "fs"] }
+tower-http = { version = "0.5.2", features = ["cors", "compression-br"] }
+async-trait = "0.1.82"

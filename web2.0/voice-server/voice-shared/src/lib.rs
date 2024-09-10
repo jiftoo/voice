@@ -1,11 +1,5 @@
-// #![forbid(unused_crate_dependencies)]
+#![forbid(unused_crate_dependencies)]
 #![allow(clippy::option_env_unwrap)]
-
-pub mod cell_deref;
-
-include!("../../include/builder_comperr.rs");
-
-pub use builder::config;
 
 use std::{
 	borrow::Cow,
@@ -17,7 +11,7 @@ use std::{
 use tokio::net::TcpListener;
 
 /// Start a voice axum server. Parses the PORT environment variable for the port to listen on.
-pub async fn axum_serve(router: axum::Router, _default_port: u16) {
+pub async fn axum_serve(router: axum::Router) {
 	println!(
 		"Launched {:?}",
 		std::env::current_exe()
@@ -35,8 +29,11 @@ pub async fn axum_serve(router: axum::Router, _default_port: u16) {
 	axum::serve(
 		TcpListener::bind((
 			"0.0.0.0",
-			// dbg!(var("PORT").map(|x| x.parse().unwrap()).unwrap_or(default_port)),
-			dbg!(var("PORT").map(|x| x.parse().unwrap()).expect("PORT env missing!")),
+			if cfg!(debug_assertions) {
+				dbg!(var("PORT").map(|x| x.parse().unwrap()).unwrap_or(3000))
+			} else {
+				dbg!(var("PORT").map(|x| x.parse().unwrap()).expect("PORT env missing!"))
+			},
 		))
 		.await
 		.unwrap(),
@@ -78,22 +75,12 @@ impl<T> Debug for PrivateDebug<T> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(packed, C)]
-pub struct RemoteFileIdentifier {
-	hash: [u8; 30],
-	magic: u8,
-	check: u8,
-}
+/// this used to be a hash and a few magic bytes. now this is just a random 256bit number.
+pub struct RemoteFileIdentifier([u8; 32]);
 
 impl AsRef<[u8]> for RemoteFileIdentifier {
 	fn as_ref(&self) -> &[u8] {
-		unsafe {
-			union Convert<'a> {
-				hash: &'a RemoteFileIdentifier,
-				bytes: &'a [u8; 32],
-			}
-			Convert { hash: self }.bytes
-		}
+		&self.0
 	}
 }
 
@@ -117,20 +104,10 @@ impl std::str::FromStr for RemoteFileIdentifier {
 			return Err(());
 		}
 
-		let hash = {
-			let mut hash = [0; 30];
-			hex::decode_to_slice(&s[0..60], &mut hash).map_err(|_| ())?;
-			hash
-		};
-		let magic = u8::from_str_radix(&s[60..62], 16).map_err(|_| ())?;
-		if magic != 0x69 {
-			return Err(());
-		}
-		let check = u8::from_str_radix(&s[62..64], 16).map_err(|_| ())?;
-		if check != Self::check(&hash) {
-			return Err(());
-		}
-		Ok(Self { hash, magic: 0x69, check })
+		let mut data = [0; 32];
+		hex::decode_to_slice(&s, &mut data).map_err(|_| ())?;
+
+		Ok(Self(data))
 	}
 }
 
@@ -138,43 +115,11 @@ impl TryFrom<&[u8]> for RemoteFileIdentifier {
 	type Error = ();
 
 	fn try_from(value: &[u8]) -> std::result::Result<Self, Self::Error> {
-		if value.len() != 32 {
+		let Ok(data) = value.try_into() else {
 			return Err(());
-		}
-		if value[30] != 0x69 {
-			return Err(());
-		}
+		};
 
-		let hash: [u8; 30] = unsafe { value[0..30].try_into().unwrap_unchecked() };
-
-		if value[31] != Self::check(&hash) {
-			return Err(());
-		}
-
-		Ok(Self { hash, magic: 0x69, check: value[31] })
-	}
-}
-
-impl RemoteFileIdentifier {
-	pub fn digest(data: impl sha256::Sha256Digest) -> Self {
-		let mut hash_full = [0; 32];
-		hex::decode_to_slice(sha256::digest(data), &mut hash_full).unwrap();
-
-		let mut hash = [0; 30];
-		hash.copy_from_slice(&hash_full[0..30]);
-
-		Self { hash, magic: 0x69, check: Self::check(&hash) }
-	}
-
-	// popcnt
-	fn check(input: &[u8; 30]) -> u8 {
-		unsafe {
-			std::mem::transmute::<_, &[u64; 4]>(input)
-				.iter()
-				.copied()
-				.map(u64::count_ones)
-				.sum::<u32>() as u8
-		}
+		Ok(Self(data))
 	}
 }
 
@@ -270,8 +215,7 @@ impl RemoteFile {
 
 #[derive(Debug, Clone, Copy)]
 pub enum RemoteFileKind {
-	VideoInput,
-	// RemoteFileIdentifier identify the parent file
+	VideoInput(RemoteFileIdentifier),
 	VideoOutput(RemoteFileIdentifier),
 	VideoAnalysis(RemoteFileIdentifier),
 	Waveform(RemoteFileIdentifier),
@@ -280,7 +224,7 @@ pub enum RemoteFileKind {
 impl RemoteFileKind {
 	pub fn as_dir_name(&self) -> &'static str {
 		match self {
-			Self::VideoInput => "input",
+			Self::VideoInput(_) => "input",
 			Self::VideoOutput(_) => "output",
 			Self::VideoAnalysis(_) => "analyse",
 			Self::Waveform(_) => "waveform",
@@ -293,10 +237,9 @@ pub mod debug_remote {
 
 	use super::*;
 
-	pub async fn file_manager() -> impl RemoteFileManager {
-		debug_remote::DebugRemoteManager::new(
-			"D:\\Coding\\rust\\voice\\web2.0\\voice-server\\debug_bucket",
-		)
+	pub async fn file_manager(root: impl AsRef<Path>) -> impl RemoteFileManager {
+		// "D:\\Coding\\rust\\voice\\web2.0\\voice-server\\debug_bucket",
+		debug_remote::DebugRemoteManager::new(root)
 	}
 
 	#[derive(Debug)]
@@ -334,10 +277,10 @@ pub mod debug_remote {
 		) -> Result<RemoteFile, RemoteFileManagerError> {
 			// make a new hash or use the same hash as the parent for derived files
 			let hash = match kind {
-				RemoteFileKind::VideoOutput(hash)
-				| RemoteFileKind::Waveform(hash)
-				| RemoteFileKind::VideoAnalysis(hash) => hash,
-				RemoteFileKind::VideoInput => RemoteFileIdentifier::digest(file),
+				RemoteFileKind::VideoOutput(id)
+				| RemoteFileKind::Waveform(id)
+				| RemoteFileKind::VideoAnalysis(id)
+				| RemoteFileKind::VideoInput(id) => id,
 			};
 
 			println!("uploading file: {} {:?}", hash, kind);
@@ -393,62 +336,17 @@ pub mod debug_remote {
 		}
 	}
 }
-
-pub mod yandex_remote {
-	use std::time::Duration;
-
-	use self::cell_deref::OnceCellDeref;
+pub mod yandex_mount_remote {
+	use std::path::Path;
 
 	use super::*;
-	use aws_config::Region;
-	use aws_sdk_s3 as s3;
-	use s3::{config::Credentials, presigning::PresigningConfig};
 
-	static CONFIG: OnceCellDeref<crate::config::VoiceSharedConfig> = OnceCellDeref::const_new();
-
-	pub async fn file_manager() -> impl RemoteFileManager {
-		CONFIG
-			.get_or_init(|| async {
-				toml::from_str(&std::fs::read_to_string("./shared-config.toml").unwrap()).unwrap()
-			})
-			.await;
-
-		let sdk_config = aws_config::from_env()
-			.endpoint_url(CONFIG.endpoint_url.clone())
-			.region(Region::new(CONFIG.region.clone()))
-			.credentials_provider(Credentials::new(
-				CONFIG.aws_id.clone(),
-				CONFIG.aws_secret.clone(),
-				None,
-				None,
-				"yandex",
-			))
-			.load()
-			.await;
-
-		YandexRemoteManager {
-			aws_client: s3::Client::new(&sdk_config),
-			bucket_name: CONFIG.bucket_name.clone(),
-		}
+	pub async fn file_manager(bucket_mount: impl AsRef<Path>) -> impl RemoteFileManager {
+		debug_remote::DebugRemoteManager::new(bucket_mount)
 	}
 
 	#[derive(Debug)]
-	pub struct YandexRemoteManager {
-		aws_client: s3::Client,
-		bucket_name: String,
-	}
-
-	impl YandexRemoteManager {
-		fn bucket_path(hash: &RemoteFileIdentifier, kind: RemoteFileKind) -> String {
-			format!("{}/{}", hash, kind.as_dir_name())
-		}
-	}
-
-	impl RemoteFile {
-		fn bucket_path(&self) -> String {
-			YandexRemoteManager::bucket_path(self.identifier(), self.kind)
-		}
-	}
+	pub struct YandexRemoteManager(debug_remote::DebugRemoteManager);
 
 	#[async_trait::async_trait]
 	impl RemoteFileManager for YandexRemoteManager {
@@ -457,37 +355,7 @@ pub mod yandex_remote {
 			file: &[u8],
 			kind: RemoteFileKind,
 		) -> Result<RemoteFile, RemoteFileManagerError> {
-			// make a new hash or use the same hash as the parent for derived files
-			let hash = match kind {
-				RemoteFileKind::VideoOutput(hash)
-				| RemoteFileKind::Waveform(hash)
-				| RemoteFileKind::VideoAnalysis(hash) => hash,
-				RemoteFileKind::VideoInput => RemoteFileIdentifier::digest(file),
-			};
-
-			println!("uploading file to {}: {}/{}", self.bucket_name, hash, kind.as_dir_name());
-
-			if let Ok(file) = self.get_file(&hash, kind).await {
-				println!("file already exists");
-				return Ok(file);
-			}
-
-			let remote_file = RemoteFile::new(kind, hash);
-			let path = remote_file.bucket_path();
-
-			self.aws_client
-				.put_object()
-				.bucket(&self.bucket_name)
-				.key(&path)
-				.body(file.to_vec().into())
-				.send()
-				.await
-				.map_err(|x| {
-					println!("failed to upload file: {}", x);
-					RemoteFileManagerError::WriteError
-				})?;
-
-			Ok(remote_file)
+			self.0.upload_file(file, kind).await
 		}
 
 		async fn get_file(
@@ -495,68 +363,23 @@ pub mod yandex_remote {
 			name: &RemoteFileIdentifier,
 			kind: RemoteFileKind,
 		) -> Result<RemoteFile, RemoteFileManagerError> {
-			let remote_file = RemoteFile::new(kind, *name);
-			let path = remote_file.bucket_path();
-
-			if (self.aws_client.head_object().bucket(&self.bucket_name).key(&path).send().await)
-				.is_ok()
-			{
-				Ok(remote_file)
-			} else {
-				Err(RemoteFileManagerError::ReadError)
-			}
+			self.0.get_file(name, kind).await
 		}
 
 		async fn load_file(&self, file: &RemoteFile) -> Result<Vec<u8>, RemoteFileManagerError> {
-			let path = file.bucket_path();
-
-			let response = self
-				.aws_client
-				.get_object()
-				.bucket(&self.bucket_name)
-				.key(&path)
-				.send()
-				.await
-				.map_err(|x| {
-					println!("failed to read file: {}", x);
-					RemoteFileManagerError::ReadError
-				})?;
-
-			let bytes = response
-				.body
-				.collect()
-				.await
-				.map(|x| x.to_vec())
-				.map_err(|_| RemoteFileManagerError::ReadError)?;
-
-			Ok(bytes)
+			self.0.load_file(file).await
 		}
 
 		async fn delete_file(&self, file: &RemoteFile) -> Result<(), RemoteFileManagerError> {
-			self.aws_client
-				.delete_object()
-				.bucket(&self.bucket_name)
-				.key(&file.bucket_path())
-				.send()
-				.await
-				.map_err(|_| RemoteFileManagerError::ReadError)?;
-
-			Ok(())
+			self.0.delete_file(file).await
 		}
 
 		async fn file_url(&self, file: &RemoteFile) -> FileUrl {
-			self.aws_client
-				.get_object()
-				.bucket(&self.bucket_name)
-				.key(&file.bucket_path())
-				.presigned(PresigningConfig::expires_in(Duration::from_secs(60 * 60)).unwrap())
-				.await
-				.map(|x| FileUrl(x.uri().parse().unwrap()))
-				.expect("failed to generate presigned url")
+			self.0.file_url(file).await
 		}
 
 		async fn public_file_url(&self, file: &RemoteFile) -> Option<FileUrl> {
-			Some(self.file_url(file).await)
+			self.0.public_file_url(file).await
 		}
 	}
 }

@@ -1,0 +1,35 @@
+# Use the official Rust image to build your application
+FROM rust:latest as builder
+
+# Set the working directory
+WORKDIR /usr/src/app
+
+# Copy the Cargo.toml and Cargo.lock files
+COPY Cargo.toml Cargo.lock ./
+
+# Create a dummy source file to prevent rebuilding dependencies unnecessarily
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+
+# Build dependencies only
+RUN cargo build --release
+RUN rm -f target/release/deps/voice-container-test*
+
+# Copy the rest of the source code
+COPY . .
+
+# Build the actual application
+RUN cargo build --release
+
+# Use a smaller image for the final runtime
+FROM debian:bookworm-slim
+
+# Install necessary libraries for your Rust app
+RUN apt-get update && apt-get install -y \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the compiled binary from the builder image
+COPY --from=builder /usr/src/app/target/release/voice-container-test /usr/local/bin/voice-container-test
+
+# Set the binary as the entrypoint
+ENTRYPOINT ["/usr/local/bin/voice-container-test"]

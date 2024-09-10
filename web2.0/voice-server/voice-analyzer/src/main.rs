@@ -1,8 +1,6 @@
 #![forbid(unused_crate_dependencies)]
 #![allow(clippy::option_env_unwrap)]
 
-include!("../../include/builder_comperr.rs");
-
 use std::{ops::Range, sync::Arc};
 
 use axum::{
@@ -12,37 +10,75 @@ use axum::{
 	routing::{get, post},
 	Json, Router,
 };
-use serde::{ser::SerializeSeq, Deserialize};
+use serde::ser::SerializeSeq;
 
-use voice_shared::{
-	cell_deref::OnceCellDeref, RemoteFileIdentifier, RemoteFileKind, RemoteFileManager,
-};
+use voice_shared::{RemoteFileIdentifier, RemoteFileKind, RemoteFileManager};
 
 mod analyze;
 mod ffmpeg;
 
-pub static CONFIG: OnceCellDeref<voice_shared::config::VoiceAnalyzerConfig> =
-	OnceCellDeref::const_new();
+pub struct Config {
+	pub bucket_mount: String,
+	pub silencedetect_noise: String,
+	pub silencedetect_duration: String,
+}
 
-#[tokio::main]
+struct AppState<T: RemoteFileManager> {
+	inner: Arc<Inner<T>>,
+}
+
+struct Inner<T: RemoteFileManager> {
+	config: Config,
+	file_manager: T,
+}
+
+impl<T: RemoteFileManager> Clone for AppState<T> {
+	fn clone(&self) -> Self {
+		Self { inner: self.inner.clone() }
+	}
+}
+
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
-	CONFIG
-		.get_or_init(|| async {
-			toml::from_str(&std::fs::read_to_string("./config.toml").unwrap()).unwrap()
-		})
-		.await;
+	let config = Config {
+		bucket_mount: std::env::var("BUCKET").expect("BUCKET environment variable to be set"),
+		silencedetect_duration: {
+			const DB_RANGE: std::ops::Range<i32> = -100..0;
+			let duration =
+				std::env::var("SILENCEDETECT_DURATION").expect("SILENCEDETECT_DURATION to be set");
+			let duration: i32 =
+				duration.parse().expect("SILENCEDETECT_DURATION to be a negative integer");
+			let duration = DB_RANGE
+				.contains(&duration)
+				.then_some(duration)
+				.expect("SILENCEDETECT_DURATION to be a negative integer");
+
+			format!("{duration}dB")
+		},
+		silencedetect_noise: {
+			let noise =
+				std::env::var("SILENCEDETECT_NOISE").expect("SILENCEDETECT_NOISE to be set");
+			noise.parse::<f64>().expect("SILENCEDETECT_NOISE to be a float");
+
+			noise
+		},
+	};
+
+	let file_manager =
+		voice_shared::yandex_mount_remote::file_manager(config.bucket_mount.clone()).await;
+
+	let state = AppState { inner: Arc::new(Inner { config, file_manager }) };
 
 	voice_shared::axum_serve(
 		Router::new()
 			.route("/file-info", post(get_file_info))
 			.route("/analyze/:file_id", get(analyze_video))
-			.with_state(voice_shared::yandex_remote::file_manager().await.into()),
-		3004,
+			.with_state(state),
 	)
 	.await;
 }
 
-#[derive(Deserialize)]
+#[derive(serde::Deserialize)]
 struct IsPremiumQuery {
 	premium: bool,
 }
@@ -80,7 +116,7 @@ impl serde::Serialize for RangerSerializer {
 
 async fn analyze_video<T: RemoteFileManager>(
 	Path(file_identifier): Path<String>,
-	State(file_manager): State<Arc<T>>,
+	State(app): State<AppState<T>>,
 	// manually send a json and set headers to 'application/json'
 ) -> Result<(HeaderMap, Vec<u8>), StatusCode> {
 	let file_identifier: RemoteFileIdentifier = file_identifier.parse().map_err(|_| {
@@ -92,26 +128,30 @@ async fn analyze_video<T: RemoteFileManager>(
 	headers.insert("Content-Type", "application/json".parse().unwrap());
 
 	// if we had already analyzed this file, return the analysis;
-	if let Ok(analysis) = file_manager
+	if let Ok(analysis) = app
+		.inner
+		.file_manager
 		.get_file(&file_identifier, RemoteFileKind::VideoAnalysis(file_identifier))
 		.await
 	{
 		println!("analysis already exists for {}", file_identifier);
-		let analysis = file_manager.load_file(&analysis).await.unwrap();
+		let analysis = app.inner.file_manager.load_file(&analysis).await.unwrap();
 		return Ok((headers, analysis));
 	}
 
 	// otherwise load the video file and analyze it.
-	let input_file = file_manager
-		.get_file(&file_identifier, RemoteFileKind::VideoInput)
+	let input_file = app
+		.inner
+		.file_manager
+		.get_file(&file_identifier, RemoteFileKind::VideoInput(file_identifier))
 		.await
 		.map_err(|_| {
 			println!("failed to get input file");
 			StatusCode::NOT_FOUND
 		})?;
 
-	let analysis = ffmpeg::FFmpeg::new(file_manager.file_url(&input_file).await)
-		.analyze_silence()
+	let analysis = ffmpeg::FFmpeg::new(app.inner.file_manager.file_url(&input_file).await)
+		.analyze_silence(&app.inner.config)
 		.await
 		.map_err(|_| {
 			println!("failed to analyze video");
@@ -121,7 +161,8 @@ async fn analyze_video<T: RemoteFileManager>(
 	// new backend "skips" the provided fragments
 	let skips_json = serde_json::to_string(&RangerSerializer(analysis.inaudible)).unwrap();
 
-	file_manager
+	app.inner
+		.file_manager
 		.upload_file(skips_json.as_bytes(), RemoteFileKind::VideoAnalysis(*input_file.identifier()))
 		.await
 		.map_err(|_| {
