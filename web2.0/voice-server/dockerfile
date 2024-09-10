@@ -10,6 +10,7 @@ FROM rust:1.81-bookworm as chef
 
 FROM chef as planner
 	WORKDIR /build
+	# should this also have RUSTFLAGS?
 	RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef as builder
@@ -31,6 +32,10 @@ FROM alpine:edge as voice-waveform-gen
 	RUN apk update && apk add --no-cache ffmpeg imagemagick
 	COPY --from=builder /build/target/x86_64-unknown-linux-gnu/release/voice-waveform-gen /voice-waveform-gen
 	CMD ["/voice-waveform-gen"]
+
+FROM scratch as voice-uri-upload
+	COPY --from=builder /build/target/x86_64-unknown-linux-gnu/release/voice-uri-upload /voice-uri-upload
+	CMD ["/voice-uri-upload"]
 
 # Prevent building without --target specified
 FROM scratch as dummy
