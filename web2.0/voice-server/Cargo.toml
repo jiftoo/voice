@@ -1,7 +1,12 @@
 [workspace]
 resolver = "2"
 
-members = ["voice-waveform-gen", "voice-shared", "voice-analyzer"]
+members = [
+	"voice-analyzer",
+	"voice-waveform-gen",
+	"voice-uri-upload",
+	"voice-shared",
+]
 
 # faster build times
 # [profile.release.package.voice-analyzer]
