@@ -3,7 +3,7 @@
 	"module": "index.ts",
 	"type": "commonjs",
 	"scripts": {
-		"build": "bun build --no-bundle --target node index.ts --outfile build/index.js"
+		"build": "bun build --no-bundle --target node src/index.ts --outfile build/index.js"
 	},
 	"devDependencies": {
 		"@eslint/js": "^9.10.0",

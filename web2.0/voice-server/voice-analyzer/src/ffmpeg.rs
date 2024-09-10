@@ -132,7 +132,7 @@ impl FFmpeg {
 
 		let status = ffmpeg.status().await.unwrap();
 		if !status.success() {
-			tracing::debug!("silence status: {status:?}");
+			println!("silence status: {status:?}");
 			return Err(FFmpegError::FFmpeg(stderr_text));
 		}
 

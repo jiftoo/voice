@@ -1,6 +1,8 @@
 #![forbid(unused_crate_dependencies)]
 #![allow(clippy::option_env_unwrap)]
 
+pub mod trigger;
+
 use std::{
 	borrow::Cow,
 	env::var,
@@ -77,6 +79,8 @@ impl<T> Debug for PrivateDebug<T> {
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 /// this used to be a hash and a few magic bytes. now this is just a random 256bit number.
 pub struct RemoteFileIdentifier([u8; 32]);
+
+pub const EMPTY_REMOTE_FILE_IDENTIFIER: RemoteFileIdentifier = RemoteFileIdentifier([0u8; 32]);
 
 impl AsRef<[u8]> for RemoteFileIdentifier {
 	fn as_ref(&self) -> &[u8] {

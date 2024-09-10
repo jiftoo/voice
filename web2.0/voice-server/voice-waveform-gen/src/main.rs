@@ -3,7 +3,7 @@
 
 mod waveform_creator;
 
-use std::{ops::Deref, sync::Arc};
+use std::{ops::Deref, process::Stdio, sync::Arc};
 
 use axum::{
 	extract::{Path, State},
@@ -66,14 +66,29 @@ async fn main() {
 		Router::new()
 			.route("/:file_id", get(get_waveform))
 			.layer(tower_http::cors::CorsLayer::permissive())
-			.with_state(state),
+			.with_state(state.clone())
+			.nest(
+				"/",
+				voice_shared::trigger::trigger_listener(move |x| on_trigger(x, state.clone())),
+			),
 	)
 	.await;
 }
 
+fn on_trigger(
+	file_identifier: RemoteFileIdentifier,
+	app: AppState<impl RemoteFileManager + 'static>,
+) {
+	tokio::spawn(async move {
+		get_waveform(Path(file_identifier.to_string()), State(app))
+			.await
+			.expect("triggered analyze_video to succeed");
+	});
+}
+
 async fn get_waveform<T: RemoteFileManager>(
-	State(app): State<AppState<T>>,
 	Path(file_identifier): Path<String>,
+	State(app): State<AppState<T>>,
 ) -> Result<(HeaderMap, Vec<u8>), StatusCode> {
 	println!("get waveform route");
 	let file_identifier: RemoteFileIdentifier = file_identifier.parse().map_err(|_| {
@@ -83,19 +98,18 @@ async fn get_waveform<T: RemoteFileManager>(
 
 	// get_waveform already checks if the file identifier is a `RemoteFileKind::Waveform`
 	let res = app.inner.creator.get_waveform(&file_identifier, &app.inner.config).await;
-	// println!("res: {:?}", res.as_ref().map(|x| x.len()));
+	println!("res: {:?}", res.as_ref().map(|x| x.len()));
 
-	// match res {
-	// 	// Ok(remote_file) => Ok(Redirect::to(remote_file.as_str())),
-	// 	Ok(bytes) => {
-	// 		let mut headers = HeaderMap::new();
-	// 		headers.insert("Content-Disposition", "inline".parse().unwrap());
-	// 		headers.insert("Content-Type", "image/png".parse().unwrap());
-	// 		headers.insert("Cache-Control", "public, max-age=31536000, immutable".parse().unwrap());
-	// 		Ok((headers, bytes))
-	// 	}
-	// 	Err(RemoteFileManagerError::ReadError) => Err(StatusCode::NOT_FOUND),
-	// 	Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
-	// }
-	todo!()
+	match res {
+		// Ok(remote_file) => Ok(Redirect::to(remote_file.as_str())),
+		Ok(bytes) => {
+			let mut headers = HeaderMap::new();
+			headers.insert("Content-Disposition", "inline".parse().unwrap());
+			headers.insert("Content-Type", "image/png".parse().unwrap());
+			headers.insert("Cache-Control", "public, max-age=31536000, immutable".parse().unwrap());
+			Ok((headers, bytes))
+		}
+		Err(RemoteFileManagerError::ReadError) => Err(StatusCode::NOT_FOUND),
+		Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+	}
 }

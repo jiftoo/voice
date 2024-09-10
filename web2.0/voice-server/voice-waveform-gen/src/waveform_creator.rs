@@ -89,10 +89,11 @@ impl<T: RemoteFileManager> WaveformCreator<T> {
 
 		// i like blocks
 		let waveform_png = {
-			println!("executing ffmpeg");
+			println!("executing ffmpeg; {}", file_url.as_str());
 			let ffmpeg_output = build_ffmpeg_command(file_url.as_str(), config)
 				.output()
 				.map_err(make_child_error)?;
+			println!("ffmpeg executed");
 			let stderr = String::from_utf8_lossy(&ffmpeg_output.stderr);
 			if !ffmpeg_output.status.success() {
 				println!("ffmpeg stderr: {stderr}");
@@ -131,7 +132,7 @@ fn build_ffmpeg_command(file_url: &str, config: &Config) -> Command {
 }
 
 fn build_magick_draw_line_command() -> Command {
-	let mut command = Command::new("convert");
+	let mut command = Command::new("magick");
 	command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).args([
 		"png:-",
 		"-gravity",
@@ -146,7 +147,7 @@ fn build_magick_draw_line_command() -> Command {
 }
 
 fn build_magick_trim_command() -> Command {
-	let mut command = Command::new("convert");
+	let mut command = Command::new("magick");
 	command
 		.stdin(Stdio::piped())
 		.stdout(Stdio::piped())

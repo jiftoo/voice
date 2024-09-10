@@ -19,8 +19,8 @@ mod ffmpeg;
 
 pub struct Config {
 	pub bucket_mount: String,
-	pub silencedetect_noise: String,
 	pub silencedetect_duration: String,
+	pub silencedetect_noise: String,
 }
 
 struct AppState<T: RemoteFileManager> {
@@ -42,23 +42,23 @@ impl<T: RemoteFileManager> Clone for AppState<T> {
 async fn main() {
 	let config = Config {
 		bucket_mount: std::env::var("BUCKET").expect("BUCKET environment variable to be set"),
-		silencedetect_duration: {
+		silencedetect_noise: {
 			const DB_RANGE: std::ops::Range<i32> = -100..0;
 			let duration =
-				std::env::var("SILENCEDETECT_DURATION").expect("SILENCEDETECT_DURATION to be set");
+				std::env::var("SILENCEDETECT_NOISE").expect("SILENCEDETECT_NOISE to be set");
 			let duration: i32 =
-				duration.parse().expect("SILENCEDETECT_DURATION to be a negative integer");
+				duration.parse().expect("SILENCEDETECT_NOISE to be a negative integer");
 			let duration = DB_RANGE
 				.contains(&duration)
 				.then_some(duration)
-				.expect("SILENCEDETECT_DURATION to be a negative integer");
+				.expect("SILENCEDETECT_NOISE to be a negative integer");
 
 			format!("{duration}dB")
 		},
-		silencedetect_noise: {
+		silencedetect_duration: {
 			let noise =
-				std::env::var("SILENCEDETECT_NOISE").expect("SILENCEDETECT_NOISE to be set");
-			noise.parse::<f64>().expect("SILENCEDETECT_NOISE to be a float");
+				std::env::var("SILENCEDETECT_DURATION").expect("SILENCEDETECT_DURATION to be set");
+			noise.parse::<f64>().expect("SILENCEDETECT_DURATION to be a float");
 
 			noise
 		},
@@ -73,9 +73,24 @@ async fn main() {
 		Router::new()
 			.route("/file-info", post(get_file_info))
 			.route("/analyze/:file_id", get(analyze_video))
-			.with_state(state),
+			.with_state(state.clone())
+			.nest(
+				"/",
+				voice_shared::trigger::trigger_listener(move |x| on_trigger(x, state.clone())),
+			),
 	)
 	.await;
+}
+
+fn on_trigger(
+	file_identifier: RemoteFileIdentifier,
+	app: AppState<impl RemoteFileManager + 'static>,
+) {
+	tokio::spawn(async move {
+		analyze_video(Path(file_identifier.to_string()), State(app))
+			.await
+			.expect("triggered analyze_video to succeed");
+	});
 }
 
 #[derive(serde::Deserialize)]
@@ -158,7 +173,7 @@ async fn analyze_video<T: RemoteFileManager>(
 			StatusCode::INTERNAL_SERVER_ERROR
 		})?;
 
-	// new backend "skips" the provided fragments
+	// new frontend "skips" the provided fragments
 	let skips_json = serde_json::to_string(&RangerSerializer(analysis.inaudible)).unwrap();
 
 	app.inner
