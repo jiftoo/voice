@@ -10,6 +10,7 @@ use axum::{
 	routing::{get, post},
 	Json, Router,
 };
+use ffmpeg::FFmpegError;
 use serde::ser::SerializeSeq;
 
 use voice_shared::{RemoteFileIdentifier, RemoteFileKind, RemoteFileManager};
@@ -133,10 +134,10 @@ async fn analyze_video<T: RemoteFileManager>(
 	Path(file_identifier): Path<String>,
 	State(app): State<AppState<T>>,
 	// manually send a json and set headers to 'application/json'
-) -> Result<(HeaderMap, Vec<u8>), StatusCode> {
-	let file_identifier: RemoteFileIdentifier = file_identifier.parse().map_err(|_| {
+) -> Result<(HeaderMap, Vec<u8>), (StatusCode, String)> {
+	let file_identifier: RemoteFileIdentifier = file_identifier.parse().map_err(|e| {
 		println!("failed to parse file identifier");
-		StatusCode::NOT_FOUND
+		(StatusCode::NOT_FOUND, "failed to parse file identifier".to_owned())
 	})?;
 
 	let mut headers = HeaderMap::new();
@@ -160,17 +161,25 @@ async fn analyze_video<T: RemoteFileManager>(
 		.file_manager
 		.get_file(&file_identifier, RemoteFileKind::VideoInput(file_identifier))
 		.await
-		.map_err(|_| {
-			println!("failed to get input file");
-			StatusCode::NOT_FOUND
+		.map_err(|e| {
+			let msg = format!("{e:?}");
+			println!("failed to get input file: {msg}");
+			(StatusCode::NOT_FOUND, msg)
 		})?;
 
 	let analysis = ffmpeg::FFmpeg::new(app.inner.file_manager.file_url(&input_file).await)
 		.analyze_silence(&app.inner.config)
 		.await
-		.map_err(|_| {
-			println!("failed to analyze video");
-			StatusCode::INTERNAL_SERVER_ERROR
+		.map_err(|e| match e {
+			FFmpegError::NoSilence => {
+				println!("video has no silence");
+				(StatusCode::NO_CONTENT, "".to_owned())
+			}
+			e => {
+				let msg = format!("{e:?}");
+				println!("failed to analyze video: {msg}");
+				(StatusCode::INTERNAL_SERVER_ERROR, msg)
+			}
 		})?;
 
 	// new frontend "skips" the provided fragments
@@ -180,9 +189,10 @@ async fn analyze_video<T: RemoteFileManager>(
 		.file_manager
 		.upload_file(skips_json.as_bytes(), RemoteFileKind::VideoAnalysis(*input_file.identifier()))
 		.await
-		.map_err(|_| {
-			println!("failed to save skips");
-			StatusCode::NOT_FOUND
+		.map_err(|e| {
+			let msg = format!("{e:?}");
+			println!("failed to save skips: {msg}");
+			(StatusCode::NOT_FOUND, msg)
 		})?;
 
 	println!("new analysis for {}", file_identifier);

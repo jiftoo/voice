@@ -83,6 +83,7 @@ impl VideoAnalysis {
 #[derive(Debug, Clone)]
 pub enum FFmpegError {
 	FFmpeg(String),
+	NoSilence,
 	IO(Arc<io::Error>),
 }
 
@@ -96,6 +97,7 @@ impl Display for FFmpegError {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			Self::FFmpeg(str) => write!(f, "{str}"),
+			Self::NoSilence => write!(f, "video contains no silence"),
 			Self::IO(io) => write!(f, "{io}"),
 		}
 	}
@@ -157,7 +159,7 @@ impl FFmpeg {
 		}
 
 		if ranges.is_empty() {
-			return Err(FFmpegError::FFmpeg("Video does not contain silence".into()));
+			return Err(FFmpegError::NoSilence);
 		}
 
 		// sometimes the silencedetect doesn't output silence_end

@@ -54,7 +54,7 @@ main {
 	width: calc(min(100%, var(--main-container-max-width)));
 	display: flex;
 	flex-direction: column;
-	gap: 4em;
+	gap: 2em;
 	margin-top: 1em;
 }
 

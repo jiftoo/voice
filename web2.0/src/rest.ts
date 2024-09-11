@@ -41,25 +41,8 @@ export function newUrlOrNull(url: string): URL | null {
 export async function checkUploadUrl(url: string): Promise<RestResult<IsUrlAcceptableFileOutput>> {
 	// nodejs mock or the prod rust server.
 	// todo: update the mock to include new status codes.
-	const USE_NODE_MOCK = false;
 	const fetchCheckUploadUrl = async () => {
-		if (USE_NODE_MOCK) {
-			return await post(
-				URL_UPLOAD_BACKEND_URL,
-				"check-upload-url?premium=" + isPremium(),
-				url,
-				"text/plain",
-				false
-			);
-		} else {
-			return await put(
-				URL_UPLOAD_BACKEND_URL,
-				"check-upload-url?premium=" + isPremium(),
-				url,
-				"text/plain",
-				false
-			);
-		}
+		return await put(URL_UPLOAD_BACKEND_URL, "check-upload-url?premium=" + isPremium(), url, "text/plain", false);
 	};
 
 	// check if the url is well-formed locally (it's still checked on the server, but we don't want to waste traffic).
@@ -192,7 +175,7 @@ async function xhrUploadToS3(
 	// xhr.setRequestHeader("Content-Type", file instanceof File ? "application/octet-stream" : "text/x-url");
 
 	xhr.upload.onprogress = e => {
-		let percentCompleted = e.lengthComputable ? (Math.round((e.loaded * 100) / e.total) / 100) : 1.0;
+		let percentCompleted = e.lengthComputable ? Math.round((e.loaded * 100) / e.total) / 100 : 1.0;
 		onProgress(percentCompleted);
 	};
 
