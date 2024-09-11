@@ -164,7 +164,7 @@ export default function Upload() {
 				(status, responseText) => {
 					if (status === 200) {
 						console.log("Upload successful");
-						navigate("/task/" + responseText);
+						navigate(import.meta.env.BASE_URL + "task/" + responseText);
 					} else {
 						console.log("Upload failed");
 					}
