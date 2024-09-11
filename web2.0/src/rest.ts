@@ -1,9 +1,9 @@
 import {GLOBAL_STATE} from "./globalState";
 
 // const BACKEND_URL = "http://localhost:3001/";
-const UPLOAD_BACKEND_URL = "http://localhost:3002/";
 // const WAVEFORM_BACKEND_URL = "http://localhost:3003/";
 // const ANALYZE_BACKEND_URL = "http://localhost:3004/";
+const UPLOAD_BACKEND_URL = "http://localhost:3002/";
 const WAVEFORM_BACKEND_URL = "http://localhost:3003/";
 const ANALYZE_BACKEND_URL = "http://localhost:3004/";
 

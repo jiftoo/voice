@@ -354,9 +354,13 @@ async fn check_upload_url_impl(
 		.ok_or(CheckUploadUrlError::NotVideo)?;
 
 	response
-		.content_length()
+		// .content_length() // content_length won't work here
+		.headers()
+		.get(reqwest::header::CONTENT_LENGTH)
+		.and_then(|x| x.to_str().ok())
+		.and_then(|x| x.parse::<usize>().ok())
 		.ok_or(CheckUploadUrlError::NoContentLength)?
-		.pipe(|l| check_file_size(l as usize, is_premium, config).option())
+		.pipe(|l| check_file_size(l, is_premium, config).option())
 		.ok_or(CheckUploadUrlError::TooBig)?;
 
 	Ok(())
