@@ -1,11 +1,10 @@
 import {GLOBAL_STATE} from "./globalState";
 
-// const BACKEND_URL = "http://localhost:3001/";
-// const WAVEFORM_BACKEND_URL = "http://localhost:3003/";
-// const ANALYZE_BACKEND_URL = "http://localhost:3004/";
-const UPLOAD_BACKEND_URL = "http://localhost:3002/";
-const WAVEFORM_BACKEND_URL = "http://localhost:3003/";
-const ANALYZE_BACKEND_URL = "http://localhost:3004/";
+const PRESIGN_URL_BACKEND_URL = "https://functions.yandexcloud.net/d4egr7s2q2m3v4g3v8ee/";
+const BUCKET_URL = "https://voice-upload-bucker-69.storage.yandexcloud.net/"; // TODO: something more robust
+const URL_UPLOAD_BACKEND_URL = "https://bba44pv1r6rdqsguq4r5.containers.yandexcloud.net/";
+const WAVEFORM_BACKEND_URL = "https://bbaj25vmu8ilqvlc6nat.containers.yandexcloud.net/";
+const ANALYZE_BACKEND_URL = "https://bbajrpitqs7cp4hvcgal.containers.yandexcloud.net/";
 
 const isPremium = () => GLOBAL_STATE.premium[0]();
 
@@ -45,9 +44,21 @@ export async function checkUploadUrl(url: string): Promise<RestResult<IsUrlAccep
 	const USE_NODE_MOCK = false;
 	const fetchCheckUploadUrl = async () => {
 		if (USE_NODE_MOCK) {
-			return await post(UPLOAD_BACKEND_URL, "check-upload-url?premium=" + isPremium(), url, "text/plain", false);
+			return await post(
+				URL_UPLOAD_BACKEND_URL,
+				"check-upload-url?premium=" + isPremium(),
+				url,
+				"text/plain",
+				false
+			);
 		} else {
-			return await put(UPLOAD_BACKEND_URL, "check-upload-url?premium=" + isPremium(), url, "text/plain", false);
+			return await put(
+				URL_UPLOAD_BACKEND_URL,
+				"check-upload-url?premium=" + isPremium(),
+				url,
+				"text/plain",
+				false
+			);
 		}
 	};
 
@@ -122,7 +133,7 @@ export async function checkUploadUrl(url: string): Promise<RestResult<IsUrlAccep
 }
 
 export async function fetchConstants(isPremium: boolean, abortSignal?: AbortSignal): Promise<unknown> {
-	const res = await get(UPLOAD_BACKEND_URL, "constants?premium=" + isPremium, false, undefined, abortSignal);
+	const res = await get(URL_UPLOAD_BACKEND_URL, "constants?premium=" + isPremium, false, undefined, abortSignal);
 	return await res.json();
 }
 
@@ -130,31 +141,67 @@ export type Uploadable = URL | File;
 
 export async function xhrUploadFile(
 	file: Uploadable,
+	// progress is [0,1]
+	onProgress: (progress: number) => void,
+	onLoad: (status: number, fileId: string) => void,
+	onError: () => void
+) {
+	if (file instanceof File) {
+		return xhrUploadToS3(file, onProgress, onLoad, onError);
+	}
+
+	// or call upload-file to upload by URL
+
+	const response = await fetch(URL_UPLOAD_BACKEND_URL, {
+		method: "POST",
+		body: (file as URL).toString()
+	});
+
+	onProgress(0.5);
+
+	if (!response.ok) {
+		console.log("error response when uploading by url", response.status, await response.text());
+		onError();
+		return;
+	}
+
+	onLoad(response.status, await response.text());
+}
+
+async function xhrUploadToS3(
+	file: File,
 	onProgress: (progress: number) => void,
 	onLoad: (status: number, responseText: string) => void,
 	onError: () => void
 ) {
+	let presigned;
+	try {
+		presigned = await fetch(PRESIGN_URL_BACKEND_URL).then(v => v.text());
+	} catch (ex) {
+		console.error("exception while getting presigned url", ex);
+		onError();
+		return;
+	}
+
+	const pathname = new URL(presigned).pathname; // /foobar/input
+	const fileId = pathname.split("/")[1];
+
 	const xhr = new XMLHttpRequest();
 
-	xhr.open("POST", UPLOAD_BACKEND_URL + "upload-file", true);
-	// select the correct content type
-	xhr.setRequestHeader("Content-Type", file instanceof File ? "application/octet-stream" : "text/x-url");
+	xhr.open("PUT", presigned, true);
+	// xhr.setRequestHeader("Content-Type", file instanceof File ? "application/octet-stream" : "text/x-url");
 
 	xhr.upload.onprogress = e => {
-		let percentCompleted = e.lengthComputable ? Math.round((e.loaded * 100) / e.total) : 1.0;
+		let percentCompleted = e.lengthComputable ? (Math.round((e.loaded * 100) / e.total) / 100) : 1.0;
 		onProgress(percentCompleted);
 	};
 
 	xhr.onload = () => {
-		onLoad(xhr.status, xhr.responseText);
+		onLoad(xhr.status, fileId);
 	};
 	xhr.onerror = onError as any;
 
-	if (file instanceof File) {
-		file.arrayBuffer().then(buffer => xhr.send(buffer));
-	} else {
-		xhr.send(file.toString());
-	}
+	xhr.send(file);
 }
 
 export async function fetchSkips(videoId: string): Promise<Array<[number, number]>> {
@@ -167,7 +214,7 @@ export function getWaveformEndpoint(videoId: string): string {
 }
 
 export function getReadFileEndpoint(videoId: string): string {
-	return UPLOAD_BACKEND_URL + "file-url/" + videoId;
+	return BUCKET_URL + videoId + "/input";
 }
 
 export function getAnalyzeEndpoint(videoId: string): string {

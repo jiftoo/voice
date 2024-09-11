@@ -1,5 +1,5 @@
 /* @refresh reload */
-import {hydrate, render} from "solid-js/web";
+import {render} from "solid-js/web";
 import App from "./App";
 import "./index.css";
 import {Router, Route} from "@solidjs/router";
@@ -10,8 +10,8 @@ const root = document.getElementById("root");
 
 const appFn = () => (
 	<Router root={App}>
-		<Route path="/" component={Upload} />
-		<Route path="/task/:id" component={Task} />
+		<Route path="/voice/" component={Upload} />
+		<Route path="/voice/task/:id" component={Task} />
 	</Router>
 );
 

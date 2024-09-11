@@ -110,6 +110,7 @@ export default function VideoPlayer(props: {src: string; ref?: Ref<HTMLVideoElem
 						<img src={isPlaying() ? pauseIcon : playIcon} />
 					</Button>
 					<span>
+						{/* TODO: add a counter in brackets counting saved seconds */}
 						{formatTime(videoTime())} / {formatTime(videoDuration()!)}
 					</span>
 				</div>

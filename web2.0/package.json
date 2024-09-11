@@ -6,7 +6,7 @@
 	"scripts": {
 		"start": "vite",
 		"build": "vite build",
-		"preview": "bun vite preview",
+		"preview": "vite build && vite preview",
 		"pretty": "prettier --write \"./**/*.{js,jsx,ts,tsx,json,css}\""
 	},
 	"dependencies": {

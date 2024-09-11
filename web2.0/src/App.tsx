@@ -7,7 +7,7 @@ export default function App(props: RouteSectionProps) {
 	return (
 		<>
 			<Navbar />
-			<div class="main-content rounded" classList={{"no-bottom-padding": location.pathname === "/"}}>
+			<div class="main-content rounded" classList={{"no-bottom-padding": location.pathname === import.meta.env.BASE_URL}}>
 				{props.children}
 			</div>
 		</>
